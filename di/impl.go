@@ -51,43 +51,51 @@ func New() *Fig {
 	}
 }
 
+var (
+	ErrorCannotBeRegister           = errors.New("provided value can't be registered")
+	ErrorCannotBeHolder             = errors.New("provided value can't be holder")
+	ErrorCannotDecideImplementation = errors.New("holder must have explicit implementation defined")
+)
+
+type FigError struct {
+	err   error
+	Cause string
+}
+
+func (fe FigError) Error() string {
+	return fmt.Sprintf("Message: %s. Cause: %s", fe.Cause, fe.err.Error())
+}
+
 func (fig *Fig) Register(impls ...interface{}) error {
 	for _, impl := range impls {
-		tpe := reflect.TypeOf(impl)
-		if tpe == nil {
-			return errors.New("nil reference can't be used")
+		implType := reflect.TypeOf(impl)
+		if implType == nil {
+			return FigError{Cause: "you cannot register nil", err: ErrorCannotBeRegister}
 		}
 
-		if tpe.Kind() == reflect.Struct ||
-			tpe.Kind() == reflect.Ptr && tpe.Elem().Kind() == reflect.Struct {
-			fig.registered[tpe] = impl
+		if implType.Kind() == reflect.Struct ||
+			implType.Kind() == reflect.Ptr && implType.Elem().Kind() == reflect.Struct {
+			fig.registered[implType] = impl
 		} else {
-			return errors.New("you can register only structs and references to structs")
+			return FigError{Cause: "only structs and references to structs can be registered", err: ErrorCannotBeRegister}
 		}
 	}
 	return nil
 }
 
-func AsString(strct interface{}) string {
-	// TODO: fmt.Sprintf("%T", svla)
-	//if refVal, ok := strct.(reflect.Value); ok {
-	//	return refVal.String()
-	//}
-	//
-	//if refType, ok := strct.(reflect.Type); ok {
-	//	return refType.String()
-	//}
-	return fmt.Sprintf("%T", strct)
-}
-
-func (fig *Fig) Initialize(strct interface{}) error {
-	if reflect.TypeOf(strct).Kind() != reflect.Ptr {
-		return errors.New("Accept only references")
+func (fig *Fig) Initialize(holder interface{}) error {
+	holderType := reflect.TypeOf(holder)
+	if holderType == nil {
+		return FigError{Cause: "nil cannot be holder", err: ErrorCannotBeHolder}
+	}
+	if holderType.Kind() != reflect.Ptr ||
+		holderType.Elem().Kind() != reflect.Struct {
+		return FigError{Cause: "only references to structs can be holders", err: ErrorCannotBeHolder}
 	}
 	if err := fig.AssembleRegistered(); err != nil {
 		return err
 	}
-	return fig.assemble(strct, 0, false)
+	return fig.assemble(holder, false)
 }
 
 func isCircleInclusion(this reflect.Type, that reflect.Type) bool {
@@ -113,8 +121,8 @@ func isCircleInclusion(this reflect.Type, that reflect.Type) bool {
 func (fig *Fig) AssembleRegistered() error {
 	var err error
 	fig.assembleRegisteredOnce.Do(func() {
-		for regType, regStruct := range fig.registered {
-			if err = fig.assemble(regStruct, 0, true); err != nil {
+		for regType, regObject := range fig.registered {
+			if err = fig.assemble(regObject, true); err != nil {
 				return
 			}
 			fig.assembled[regType] = true
@@ -123,8 +131,7 @@ func (fig *Fig) AssembleRegistered() error {
 	return err
 }
 
-func getFigTagConfig(holder interface{}, fieldIndex int, key string) (string, bool) {
-	tag := getTag(reflect.TypeOf(holder), fieldIndex)
+func getFigTagConfig(tag reflect.StructTag, key string) (string, bool) {
 	if figTag, ok := tag.Lookup("fig"); ok {
 		return getConfigValueForKey(figTag, key)
 	} else {
@@ -132,52 +139,29 @@ func getFigTagConfig(holder interface{}, fieldIndex int, key string) (string, bo
 	}
 }
 
-func (fig *Fig) setFoundImpl(canBeSet []interface{}, holder interface{}, fieldIndex int) (string, error) {
-	holderValue := reflect.ValueOf(holder)
-	if holderValue.Kind() == reflect.Ptr {
-		if holderValue.Elem().Kind() == reflect.Struct {
-			holderValue = holderValue.Elem()
-		} else {
-			return "", errors.New("Not able to inject to non struct objects")
-		}
-	} else if holderValue.Kind() != reflect.Struct {
-		return "", errors.New("Not able to inject to non struct objects")
-	}
-
-	elementField := holderValue.Field(fieldIndex)
-	elementFieldType := elementField.Type()
-
-	if skipConfValue, found := getFigTagConfig(holder, fieldIndex, "skip"); found {
-		if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
-			return "", err
-		} else if needSkip {
-			return elementFieldType.Name(), nil
-		}
-	}
-
+func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value, tag reflect.StructTag) error {
 	if len(canBeSet) > 1 {
-		fmt.Println("Decision between multiple implementations:", canBeSet)
-		implFigConf, found := getFigTagConfig(holder, fieldIndex, "impl")
+		implFigConf, found := getFigTagConfig(tag, "impl")
 		if !found {
-			mes := "Can't chose implementation for " + AsString(elementField) + ". Found:\n"
+			mes := "Can't chose implementation for " + elementField.String() + ". Found:\n"
 			for _, canBe := range canBeSet {
 				mes += fmt.Sprintf("\t%T\n", canBe)
 			}
-			return "", errors.New(mes)
+			return errors.New(mes)
 		}
 		for _, canBe := range canBeSet {
 			implName := getFullName(canBe)
 			if implName == implFigConf {
 				elementField.Addr().Elem().Set(reflect.ValueOf(canBe))
-				return elementFieldType.Name(), nil
+				return nil
 			}
 		}
-		return "", errors.New(fmt.Sprintf("Implementation specification defined in tag not found: %s", implFigConf))
+		return errors.New(fmt.Sprintf("Implementation specification defined in tag not found: %s", implFigConf))
 	} else if len(canBeSet) < 1 {
-		return "", errors.New("No implementation found for " + AsString(elementField))
+		return errors.New("No implementation found for " + elementField.String())
 	} else {
 		elementField.Addr().Elem().Set(reflect.ValueOf(canBeSet[0]))
-		return elementFieldType.Name(), nil
+		return nil
 	}
 }
 
@@ -200,148 +184,114 @@ func getFullName(canBe interface{}) string {
 	return implName
 }
 
-func getTag(holderType reflect.Type, fieldIndex int) reflect.StructTag {
-	if holderType.Kind() == reflect.Ptr && holderType.Elem().Kind() == reflect.Struct {
-		return holderType.Elem().Field(fieldIndex).Tag
-	} else {
-		return holderType.Field(fieldIndex).Tag
+func (fig *Fig) assemble(holder interface{}, recursive bool) error {
+	holderElement := reflect.ValueOf(holder)
+	if holderElement.Kind() == reflect.Ptr {
+		holderElement = holderElement.Elem()
 	}
-}
+	holderElementType := holderElement.Type()
+	numFields := holderElement.NumField()
+	allFields := make(map[reflect.Value]struct{})
 
-func (fig *Fig) assemble(holder interface{}, deep int, recursive bool) error {
-	fmt.Println("Start assembling of", AsString(holder))
-	if holder == nil {
-		return errors.New("nil reference can't be used")
-	}
-	holderValue := reflect.ValueOf(holder)
-	if err := validateHolder(holderValue); err != nil {
-		return err
-	}
+	for fieldIndex := 0; fieldIndex < numFields; fieldIndex++ {
+		holderElementField := holderElement.Field(fieldIndex)
+		holderElementFieldType := holderElementField.Type()
+		tag := holderElementType.Field(fieldIndex).Tag
+		if skipConfValue, found := getFigTagConfig(tag, "skip"); found {
+			if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
+				return err
+			} else if needSkip {
+				continue
+			}
+		}
+		allFields[holderElementField] = struct{}{}
 
-	var holderElement reflect.Value
-	if holderValue.Kind() == reflect.Ptr {
-		holderElement = holderValue.Elem()
-	} else {
-		holderElement = holderValue
-	}
-	numField := holderElement.NumField()
-	allFields := make(map[string]struct{})
-
-	for fieldIndex := 0; fieldIndex < numField; fieldIndex++ {
-		elementField := holderElement.Field(fieldIndex)
-		fmt.Println("Start assembling of field", AsString(elementField))
-		elementFieldType := elementField.Type()
-		allFields[elementFieldType.Name()] = struct{}{}
-
-		switch elementField.Kind() {
+		switch holderElementField.Kind() {
 		case reflect.Interface:
-			fmt.Println("Assembling of interface field")
 			var canBeSet []interface{}
 			for registeredType, injectableObj := range fig.registered {
-				if registeredType.Implements(elementFieldType) && !isCircleInclusion(registeredType, elementFieldType) {
+				if registeredType.Implements(holderElementFieldType) && !isCircleInclusion(registeredType, holderElementFieldType) {
 					if recursive && !fig.assembled[registeredType] {
-						if err := fig.assemble(injectableObj, deep+1, recursive); err != nil {
+						if err := fig.assemble(injectableObj, recursive); err != nil {
 							return err
 						}
 					}
 					canBeSet = append(canBeSet, injectableObj)
-					fmt.Println("Potential candidate: ", AsString(injectableObj))
 				}
 			}
-
-			if elementFieldTypeName, err := fig.setFoundImpl(canBeSet, holder, fieldIndex); err != nil {
+			if err := fig.setFoundImpl(canBeSet, holderElementField, tag); err != nil {
 				return err
-			} else {
-				delete(allFields, elementFieldTypeName)
 			}
+
 		case reflect.Ptr:
 			// TODO: we want be able to set basic values with reference type(optional parameters)
-			if elementFieldType.Elem().Kind() == reflect.Struct {
-				fmt.Println("Assembling of struct(reference) field")
+			if holderElementFieldType.Elem().Kind() == reflect.Struct {
 				var canBeSet []interface{}
 				for registeredType, injectableObj := range fig.registered {
-					if registeredType.AssignableTo(elementFieldType) {
-						fmt.Println(registeredType.String(), "is AssignableTo", elementFieldType.String(), deep)
+					if registeredType.AssignableTo(holderElementFieldType) {
 						if recursive && !fig.assembled[registeredType] {
-							if err := fig.assemble(injectableObj, deep+1, recursive); err != nil {
+							if err := fig.assemble(injectableObj, recursive); err != nil {
 								return err
 							}
 						}
 						canBeSet = append(canBeSet, injectableObj)
-						fmt.Println("Potential candidate: ", AsString(injectableObj))
 					}
 				}
-
-				if elementFieldTypeName, err := fig.setFoundImpl(canBeSet, holder, fieldIndex); err != nil {
+				if err := fig.setFoundImpl(canBeSet, holderElementField, tag); err != nil {
 					return err
-				} else {
-					delete(allFields, elementFieldTypeName)
 				}
 			} else {
-				return errors.New("Can't inject non-struct reference fields")
+				return FigError{Cause: "Can't inject to non-struct reference fields", err: ErrorCannotBeHolder}
 			}
+
 		case reflect.Struct:
-			fmt.Println("Assembling of struct(value) field")
 			var canBeSet []interface{}
 			for registeredType, injectableObj := range fig.registered {
-				if registeredType.AssignableTo(elementFieldType) {
-					fmt.Println(registeredType.String(), "is AssignableTo", elementFieldType.String(), deep)
+				if registeredType.AssignableTo(holderElementFieldType) {
 					if recursive && !fig.assembled[registeredType] {
-						if err := fig.assemble(injectableObj, deep+1, recursive); err != nil {
+						if err := fig.assemble(injectableObj, recursive); err != nil {
 							return err
 						}
 					}
 					canBeSet = append(canBeSet, injectableObj)
-					fmt.Println("Potential candidate: ", AsString(injectableObj))
 				}
 			}
-
-			if elementFieldTypeName, err := fig.setFoundImpl(canBeSet, holder, fieldIndex); err != nil {
+			if err := fig.setFoundImpl(canBeSet, holderElementField, tag); err != nil {
 				return err
-			} else {
-				delete(allFields, elementFieldTypeName)
 			}
+
+		case
+			reflect.String:
+			if envKey, found := getFigTagConfig(tag, "env"); found {
+				envVal := os.Getenv(envKey)
+				holderElementField.Addr().Elem().Set(reflect.ValueOf(envVal))
+			}
+
 		case
 			reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Bool,
 			reflect.Slice,
 			reflect.Map,
-			reflect.String:
-
-			if envKey, found := getFigTagConfig(holder, fieldIndex, "env"); found {
-				envVal := os.Getenv(envKey)
-				elementField.Addr().Elem().Set(reflect.ValueOf(envVal))
-			}
-			delete(allFields, elementFieldType.Name())
-			fmt.Println("Basic type assembling:", elementField.Type().String(), elementFieldType.Name(), deep)
-
-		case
 			reflect.Complex64, reflect.Complex128,
 			reflect.Array,
 			reflect.Chan,
 			reflect.Func:
-			delete(allFields, elementFieldType.Name())
-			fmt.Println("Basic type assembling: ", elementFieldType.Name(), deep)
+			return FigError{Cause: "Unsupported holder field type: " + holderElementField.String(), err: ErrorCannotBeHolder}
 		default:
-			fmt.Println("Type assembling: ", elementFieldType.Name(), deep)
+			return FigError{Cause: "Unsupported holder field type: " + holderElementField.String(), err: ErrorCannotBeHolder}
 		}
+		delete(allFields, holderElementField)
 	}
 	if len(allFields) > 0 {
 		var notInjected []string
-		for fieldName := range allFields {
-			notInjected = append(notInjected, fieldName)
+		for field := range allFields {
+			notInjected = append(notInjected, field.String())
 		}
-		return errors.New(fmt.Sprintf("Implementations were not found for: %s %d", strings.Join(notInjected, ", "), deep))
+		return FigError{
+			Cause: fmt.Sprintf("Implementations were not found for: %s", strings.Join(notInjected, ", ")),
+			err:   ErrorCannotDecideImplementation,
+		}
 	}
 	return nil
-}
-
-func validateHolder(value reflect.Value) error {
-	vkind := value.Kind()
-	if vkind == reflect.Struct ||
-		(vkind == reflect.Ptr && value.Elem().Kind() == reflect.Struct) {
-		return nil
-	}
-	return errors.New("you can use only structs and references to structs as points of injection")
 }
