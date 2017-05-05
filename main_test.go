@@ -1,16 +1,16 @@
 package main
 
 import (
+	"fmt"
 	"github.com/pavelmemory/fig/di"
 	"github.com/pavelmemory/fig/repos"
+	"github.com/pavelmemory/fig/repos2"
 	"os"
 	"testing"
-	"github.com/pavelmemory/fig/repos2"
-	"fmt"
 )
 
 func TestFig_InitializeStructWithInterfaces(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos.FileBookRepo{},
@@ -37,7 +37,7 @@ func TestFig_InitializeStructWithInterfaces(t *testing.T) {
 }
 
 func TestFig_InitializeStructWithInterfacesMultipleImpls(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(
 		&repos.FileUserRepo{Message: "File"},
 		&repos.MemUserRepo{Message: "Mem"},
@@ -65,7 +65,7 @@ func TestFig_InitializeStructWithInterfacesMultipleImpls(t *testing.T) {
 }
 
 func TestFig_Initialize_UnnamedStructWithInterfacesAndValue(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos.FileBookRepo{},
@@ -96,7 +96,7 @@ func TestFig_Initialize_UnnamedStructWithInterfacesAndValue(t *testing.T) {
 }
 
 func TestFig_Initialize_MultipleImplsWithSameStructNameWithoutExplicitDefinition(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos2.FileUserRepo{Message: "Message2"},
@@ -113,7 +113,7 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithoutExplicitDefinition
 }
 
 func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos2.FileUserRepo{Message: "Message2"},
@@ -133,7 +133,7 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t 
 }
 
 func TestFig_Initialize_InnerFieldsShouldPopulateAutomatically(t *testing.T) {
-	fig := di.New()
+	fig := di.New(false)
 	if err := fig.Register(
 		&repos.MemUserRepo{Message: "Memory"},
 		&repos.FileUserRepo{Message: "File"},
@@ -160,7 +160,7 @@ func TestFig_Initialize_InnerFieldsShouldPopulateAutomatically(t *testing.T) {
 func Test_Initialize_EnvVar(t *testing.T) {
 	envValue := "DEV"
 	os.Setenv("ENV_NAME", envValue)
-	fig := di.New()
+	fig := di.New(false)
 
 	holder := struct {
 		EnvName string `fig:"env[ENV_NAME]"`
@@ -176,17 +176,16 @@ func Test_Initialize_EnvVar(t *testing.T) {
 	os.Unsetenv("ENV_NAME")
 }
 
-
 func Test_Initialize_Skip(t *testing.T) {
 	envValue := "DEV"
 	os.Setenv("ENV_NAME", envValue)
-	fig := di.New()
+	fig := di.New(false)
 	fig.Register(&repos2.FileUserRepo{})
 
 	holder := struct {
-		UserRepoShouldBeNil repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/repos2/FileUserRepo] skip[true]"`
+		UserRepoShouldBeNil  repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/repos2/FileUserRepo] skip[true]"`
 		UserRepoShouldBeInit repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/repos2/FileUserRepo] skip[false]"`
-		EnvName string `fig:"env[ENV_NAME] skip[true]"`
+		EnvName              string         `fig:"env[ENV_NAME] skip[true]"`
 	}{}
 
 	if err := fig.Initialize(&holder); err != nil {
@@ -203,4 +202,66 @@ func Test_Initialize_Skip(t *testing.T) {
 		t.Error("Should be set because skip = false provided")
 	}
 	os.Unsetenv("ENV_NAME")
+}
+
+func Test_Initialize_RegisterValue(t *testing.T) {
+	fig := di.New(false)
+	regValue := new(int)
+	*regValue = 100
+	fig.RegisterValue("regKey", regValue)
+	fig.RegisterValue("regKey2", rune(100))
+
+	holder := struct {
+		RegValue     *int `fig:"reg[regKey]"`
+		RegValueSkip rune `fig:"reg[regKey2] skip[true]"`
+	}{}
+
+	if err := fig.Initialize(&holder); err != nil {
+		t.Fatal(err)
+	}
+
+	if *holder.RegValue != 100 {
+		t.Error("RegValue should be set")
+	}
+
+	if holder.RegValueSkip != rune(0) {
+		t.Error("RegValue should not be set")
+	}
+}
+
+func Test_Initialize_RegisterValueNotFound(t *testing.T) {
+	fig := di.New(false)
+
+	holder := struct {
+		RegValue int `fig:"reg[regKey]"`
+	}{}
+
+	err := fig.Initialize(&holder)
+	if err == nil {
+		t.Fatal("Should singal error")
+	}
+	figErr := err.(di.FigError)
+	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+		t.Error("Should be that type of error")
+	}
+}
+
+func Test_Initialize_OnlyWithFigTag(t *testing.T) {
+	fig := di.New(true)
+	fig.Register(new(repos.FileUserRepo))
+	holder := struct {
+		DoesNotNeedToInject repos.UserRepo
+		NeedToInject        repos.UserRepo `fig:""`
+	}{}
+
+	err := fig.Initialize(&holder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder.DoesNotNeedToInject != nil {
+		t.Error("Fields without `fig` tag should not be injected")
+	}
+	if holder.NeedToInject == nil {
+		t.Error("Fields without `fig` must be injected")
+	}
 }

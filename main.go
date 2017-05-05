@@ -12,7 +12,7 @@ import (
 
 func main() {
 	os.Setenv("ENV_NAME", "DEV")
-	fig := di.New()
+	fig := di.New(false)
 	if err := fig.Register(
 		&repos.MemUserRepo{Message: "Memory"},
 		&repos2.MemUserRepo{Message: "Memory"},
