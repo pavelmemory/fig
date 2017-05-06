@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/pavelmemory/fig/di"
 	"github.com/pavelmemory/fig/repos"
 	"github.com/pavelmemory/fig/repos2"
@@ -19,7 +18,7 @@ func TestFig_InitializeStructWithInterfaces(t *testing.T) {
 
 	rps := new(repos.Module)
 	if err := fig.Initialize(rps); err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 
 	find := rps.Find()
@@ -109,7 +108,11 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithoutExplicitDefinition
 	if err == nil {
 		t.Error("Multiple implementations registered require implicit definition of one to choose")
 	}
-	fmt.Println(err)
+	figErr := err.(di.FigError)
+	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+		t.Log(err)
+		t.Error("unexpected error")
+	}
 }
 
 func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t *testing.T) {
@@ -126,20 +129,18 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t 
 	if err != nil {
 		t.Error("Multiple implementations registered require implicit definition of one to choose")
 	}
-	fmt.Println(repo.Find())
 	if repo.Find()[0] != "repos2" {
 		t.Errorf("Incorrect implementation injected: %s", repo.Find())
 	}
 }
 
-func TestFig_Initialize_InnerFieldsShouldPopulateAutomatically(t *testing.T) {
+func TestFig_Initialize_InnerFieldsShouldBeInjectedAutomaticallyIfRegistered(t *testing.T) {
 	fig := di.New(false)
 	if err := fig.Register(
 		&repos.MemUserRepo{Message: "Memory"},
 		&repos.FileUserRepo{Message: "File"},
 		repos.FileBookRepo{},
 		new(repos.MemOrderRepo),
-		new(repos.Module),
 	); err != nil {
 		t.Error(err)
 	}
@@ -148,18 +149,19 @@ func TestFig_Initialize_InnerFieldsShouldPopulateAutomatically(t *testing.T) {
 		*repos.Module
 	}{}
 	if err := fig.Initialize(&nested); err != nil {
-		fmt.Println(err.Error())
 		t.Fatal(err)
 	}
-
 	if nested.Module.BookRepo == nil {
 		t.Error("Not initialized")
 	}
 }
 
 func Test_Initialize_EnvVar(t *testing.T) {
-	envValue := "DEV"
-	os.Setenv("ENV_NAME", envValue)
+	envKey, envValue := "ENV_NAME", "DEV"
+	os.Setenv(envKey, envValue)
+	defer func() {
+		os.Unsetenv(envKey)
+	}()
 	fig := di.New(false)
 
 	holder := struct {
@@ -173,12 +175,14 @@ func Test_Initialize_EnvVar(t *testing.T) {
 	if holder.EnvName != envValue {
 		t.Error("Env var was not set")
 	}
-	os.Unsetenv("ENV_NAME")
 }
 
 func Test_Initialize_Skip(t *testing.T) {
-	envValue := "DEV"
-	os.Setenv("ENV_NAME", envValue)
+	envKey, envValue := "ENV_NAME", "DEV"
+	os.Setenv(envKey, envValue)
+	defer func() {
+		os.Unsetenv(envKey)
+	}()
 	fig := di.New(false)
 	fig.Register(&repos2.FileUserRepo{})
 
@@ -263,5 +267,67 @@ func Test_Initialize_OnlyWithFigTag(t *testing.T) {
 	}
 	if holder.NeedToInject == nil {
 		t.Error("Fields without `fig` must be injected")
+	}
+}
+
+func Test_Initialize_RecursiveInjectionToUnnamedStructs(t *testing.T) {
+	fig := di.New(false)
+	fig.Register(new(repos.FileUserRepo))
+	holder := struct {
+		FirstLevel struct {
+			JustSimpleFieldOnFirstLevel string
+			SecondLevel                 struct {
+				NeedToBeInjected             repos.UserRepo
+				JustSimpleFieldOnSecondLevel string
+			}
+		}
+	}{}
+
+	err := fig.Initialize(&holder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder.FirstLevel.SecondLevel.NeedToBeInjected == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+}
+
+func Test_Initialize_RecursiveInjectionToReferenceFields(t *testing.T) {
+	envKey, envValue := "ENV_NAME", "DEV"
+	os.Setenv(envKey, envValue)
+	defer func() {
+		os.Unsetenv(envKey)
+	}()
+
+	type secondLevelReferenceStruct struct {
+		NeedToBeInjected             repos.UserRepo
+		JustSimpleFieldOnSecondLevel string `fig:"env[ENV_NAME]"`
+	}
+
+	type firstLevelReferenceStruct struct {
+		JustSimpleFieldOnFirstLevel string
+		SecondLevel                 *secondLevelReferenceStruct
+	}
+
+	type holderWithReferenceFields struct {
+		FirstLevel *firstLevelReferenceStruct
+	}
+
+	fig := di.New(false)
+	fig.Register(&repos.FileUserRepo{Message: "File"})
+	holder := holderWithReferenceFields{}
+
+	err := fig.Initialize(&holder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder.FirstLevel.SecondLevel.NeedToBeInjected == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+	if holder.FirstLevel.SecondLevel.NeedToBeInjected.Find()[1] != "File" {
+		t.Error("Incorrect implementation was injected")
+	}
+	if holder.FirstLevel.SecondLevel.JustSimpleFieldOnSecondLevel != "DEV" {
+		t.Error("Simple value from env was not injected")
 	}
 }

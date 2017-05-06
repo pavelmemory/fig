@@ -67,7 +67,7 @@ func New(injectOnlyIfFigTagProvided bool) *Fig {
 var (
 	ErrorCannotBeRegister           = errors.New("provided value can't be registered")
 	ErrorCannotBeHolder             = errors.New("provided value can't be holder")
-	ErrorCannotDecideImplementation = errors.New("holder must have explicit implementation defined")
+	ErrorCannotDecideImplementation = errors.New("not able to get value to inject")
 	ErrorRegisteredValueOverridden  = errors.New("already registered value was overridden")
 )
 
@@ -84,7 +84,7 @@ func (fig *Fig) Register(impls ...interface{}) error {
 	for _, impl := range impls {
 		implType := reflect.TypeOf(impl)
 		if implType == nil {
-			return FigError{Cause: "you cannot register nil", Error_: ErrorCannotBeRegister}
+			return FigError{Cause: "nil cannot be registered as injectable value", Error_: ErrorCannotBeRegister}
 		}
 
 		if implType.Kind() == reflect.Struct ||
@@ -129,7 +129,6 @@ func isCircleInclusion(this reflect.Type, that reflect.Type) bool {
 		numFields := this.NumField()
 		for i := 0; i < numFields; i++ {
 			thisFieldType := this.Field(i).Type
-			fmt.Println(thisFieldType.String(), that.String())
 			if that.AssignableTo(thisFieldType) {
 				return true
 			}
@@ -184,7 +183,22 @@ func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value,
 			Error_: ErrorCannotDecideImplementation,
 		}
 	} else if len(canBeSet) < 1 {
-		return FigError{Cause: "no implementation found for " + elementField.String(), Error_: ErrorCannotDecideImplementation}
+		switch elementField.Kind() {
+		case reflect.Struct:
+			if err := fig.Initialize(elementField.Addr().Interface()); err != nil {
+				return err
+			}
+		case reflect.Ptr:
+			if elementField.IsNil() {
+				elementField.Set(reflect.New(elementField.Type().Elem()))
+			}
+			if err := fig.Initialize(elementField.Interface()); err != nil {
+				return err
+			}
+		default:
+			return FigError{Cause: "no implementation found for " + elementField.String(), Error_: ErrorCannotDecideImplementation}
+		}
+		return nil
 	} else {
 		elementField.Addr().Elem().Set(reflect.ValueOf(canBeSet[0]))
 		return nil
@@ -283,6 +297,7 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 				return err
 			}
 		} else {
+			//fmt.Println("WARNING: TODO: we want be able to set basic values with reference type(optional parameters)")
 			return FigError{Cause: "Can't inject to non-struct reference fields", Error_: ErrorCannotBeHolder}
 		}
 
