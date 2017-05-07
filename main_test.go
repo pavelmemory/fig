@@ -376,3 +376,82 @@ func Test_Initialize_PointerToPointer(t *testing.T) {
 		t.Error("Incorrect impl injected")
 	}
 }
+
+type StringGetter interface {
+	Get() string
+}
+
+type StringGetterWithQualifier struct {
+	qualifier string
+}
+
+func (sgwq *StringGetterWithQualifier) Get() string {
+	return sgwq.qualifier
+}
+
+func (sgwq *StringGetterWithQualifier) Qualify() string {
+	return sgwq.qualifier
+}
+
+type StringGetterWithoutQualifier struct {
+}
+
+func (sgwq *StringGetterWithoutQualifier) Get() string {
+	return "something"
+}
+
+func Test_Initialize_QualifyDefinedCorrectly(t *testing.T) {
+	fig := di.New(false)
+	if err := fig.Register(
+		&StringGetterWithQualifier{},
+		&StringGetterWithQualifier{qualifier: "ass"},
+		new(StringGetterWithoutQualifier),
+		&StringGetterWithQualifier{qualifier: "tits"},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	holder := struct {
+		ByQualifier StringGetter `fig:"qual[tits]"`
+		ByImpl      StringGetter `fig:"impl[github.com/pavelmemory/fig/StringGetterWithoutQualifier]"`
+	}{}
+	if err := fig.Initialize(&holder); err != nil {
+		t.Fatal(err)
+	}
+	if holder.ByQualifier == nil {
+		t.Fatal("implementation was not injeted when qualifier in use")
+	}
+	if holder.ByQualifier.Get() != "tits" {
+		t.Error("incorrect implementation was injeted with qualifier in use")
+	}
+	if holder.ByImpl == nil {
+		t.Fatal("implementation was not injeted when impl defined explicitly")
+	}
+	if holder.ByImpl.Get() != "something" {
+		t.Error("incorrect implementation was injeted when impl defined explicitly")
+	}
+}
+
+func Test_Initialize_QualifyNotDefinedButTagProvided(t *testing.T) {
+	fig := di.New(false)
+	if err := fig.Register(
+		new(StringGetterWithQualifier),
+		new(StringGetterWithoutQualifier),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	holder := struct {
+		ByQualifier StringGetter `fig:"qual[tits]"`
+	}{}
+	err := fig.Initialize(&holder)
+	if err == nil {
+		t.Fatal("there must be error because nothing in two registered equals to 'qual' value")
+	}
+	figErr := err.(di.FigError)
+	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+		t.Log(err)
+		t.Error("unexpected error")
+	}
+}
+

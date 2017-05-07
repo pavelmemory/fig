@@ -16,6 +16,7 @@ const (
 	ENV_TAG_KEY  = "env"
 	SKIP_TAG_KEY = "skip"
 	REG_TAG_KEY  = "reg"
+	QUAL_TAG_KEY = "qual"
 )
 
 func getConfigValueForKey(conf string, key string) (string, bool) {
@@ -161,28 +162,50 @@ func getFigTagConfig(tag reflect.StructTag, key string) (string, bool) {
 	}
 }
 
+func setByImplConf(canBeSet []interface{}, elementField reflect.Value, implFigConf string) error {
+	for _, canBe := range canBeSet {
+		implName := getFullName(canBe)
+		if implName == implFigConf {
+			elementField.Addr().Elem().Set(reflect.ValueOf(canBe))
+			return nil
+		}
+	}
+	return FigError{
+		Cause:  fmt.Sprintf("implementation defined in tag was not found: %s", implFigConf),
+		Error_: ErrorCannotDecideImplementation,
+	}
+}
+
+func setByQualConf(canBeSet []interface{}, elementField reflect.Value, qualFigConf string) error {
+	for _, canBe := range canBeSet {
+		if met, err := checkQualifier(canBe, qualFigConf); err != nil {
+			return err
+		} else if met {
+			elementField.Addr().Elem().Set(reflect.ValueOf(canBe))
+			return nil
+		}
+	}
+	return FigError{
+		Cause:  fmt.Sprintf("condition defined in tag was not found: %s", qualFigConf),
+		Error_: ErrorCannotDecideImplementation,
+	}
+}
+
 func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value, tag reflect.StructTag) error {
-	if len(canBeSet) > 1 {
-		implFigConf, found := getFigTagConfig(tag, IMPL_TAG_KEY)
-		if !found {
+	switch {
+	case len(canBeSet) > 1:
+		if implFigConf, found := getFigTagConfig(tag, IMPL_TAG_KEY); found {
+			return setByImplConf(canBeSet, elementField, implFigConf)
+		} else if qualFigConf, found := getFigTagConfig(tag, QUAL_TAG_KEY); found {
+			return setByQualConf(canBeSet, elementField, qualFigConf)
+		} else {
 			mes := "can't chose implementation for " + elementField.String() + ":\n"
 			for _, canBe := range canBeSet {
 				mes += fmt.Sprintf("\t%T\n", canBe)
 			}
 			return FigError{Cause: mes, Error_: ErrorCannotDecideImplementation}
 		}
-		for _, canBe := range canBeSet {
-			implName := getFullName(canBe)
-			if implName == implFigConf {
-				elementField.Addr().Elem().Set(reflect.ValueOf(canBe))
-				return nil
-			}
-		}
-		return FigError{
-			Cause:  fmt.Sprintf("implementation defined in tag was not found: %s", implFigConf),
-			Error_: ErrorCannotDecideImplementation,
-		}
-	} else if len(canBeSet) < 1 {
+	case len(canBeSet) < 1:
 		switch elementField.Kind() {
 		case reflect.Struct:
 			if err := fig.Initialize(elementField.Addr().Interface()); err != nil {
@@ -198,11 +221,32 @@ func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value,
 		default:
 			return FigError{Cause: "no implementation found for " + elementField.String(), Error_: ErrorCannotDecideImplementation}
 		}
-		return nil
-	} else {
+	default:
 		elementField.Addr().Elem().Set(reflect.ValueOf(canBeSet[0]))
-		return nil
 	}
+	return nil
+}
+
+func checkQualifier(canBe interface{}, qualFigConf string) (bool, error) {
+	canBeValue := reflect.ValueOf(canBe)
+	qualifyMethod := canBeValue.MethodByName("Qualify")
+	if !qualifyMethod.IsValid() {
+		return false, FigError{
+			Cause:  fmt.Sprintf("type has no 'Qualify' method defined: %T", canBe),
+			Error_: ErrorCannotDecideImplementation,
+		}
+	}
+	qualifyValue := qualifyMethod.Call(nil)
+	if len(qualifyValue) != 1 && qualifyValue[0].Kind() != reflect.String {
+		return false, FigError{
+			Cause:  fmt.Sprintf("'Qualify' method of %T has incorrect signature", canBe),
+			Error_: ErrorCannotDecideImplementation,
+		}
+	}
+	if qualifyValue[0].String() == qualFigConf {
+		return true, nil
+	}
+	return false, nil
 }
 
 func getFullName(canBe interface{}) string {
