@@ -292,26 +292,26 @@ func Test_Initialize_RecursiveInjectionToUnnamedStructs(t *testing.T) {
 	}
 }
 
+type secondLevelReferenceStruct struct {
+	NeedToBeInjected             repos.UserRepo
+	JustSimpleFieldOnSecondLevel string `fig:"env[ENV_NAME]"`
+}
+
+type firstLevelReferenceStruct struct {
+	JustSimpleFieldOnFirstLevel string
+	SecondLevel                 *secondLevelReferenceStruct
+}
+
+type holderWithReferenceFields struct {
+	FirstLevel *firstLevelReferenceStruct
+}
+
 func Test_Initialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
 	defer func() {
 		os.Unsetenv(envKey)
 	}()
-
-	type secondLevelReferenceStruct struct {
-		NeedToBeInjected             repos.UserRepo
-		JustSimpleFieldOnSecondLevel string `fig:"env[ENV_NAME]"`
-	}
-
-	type firstLevelReferenceStruct struct {
-		JustSimpleFieldOnFirstLevel string
-		SecondLevel                 *secondLevelReferenceStruct
-	}
-
-	type holderWithReferenceFields struct {
-		FirstLevel *firstLevelReferenceStruct
-	}
 
 	fig := di.New(false)
 	fig.Register(&repos.FileUserRepo{Message: "File"})
@@ -329,5 +329,50 @@ func Test_Initialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 	}
 	if holder.FirstLevel.SecondLevel.JustSimpleFieldOnSecondLevel != "DEV" {
 		t.Error("Simple value from env was not injected")
+	}
+}
+
+type firstLevelReferenceStructWithoutDependencies struct {
+	SecondLevel *secondLevelReferenceStructWithoutDependencies
+}
+
+type secondLevelReferenceStructWithoutDependencies struct {
+	JustSimpleFieldOnSecondLevel string
+}
+
+func Test_Initialize_RecursiveInjectionToReferenceFieldsWithoutDependencies(t *testing.T) {
+	fig := di.New(false)
+	holder := struct {
+		FirstLevel *firstLevelReferenceStructWithoutDependencies
+	}{}
+
+	err := fig.Initialize(&holder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if holder.FirstLevel.SecondLevel == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+}
+
+func Test_Initialize_PointerToPointer(t *testing.T) {
+	fig := di.New(false)
+	if err := fig.Register(new(repos.FileBookRepo)); err != nil {
+		t.Fatal(err)
+	}
+
+	holder := struct {
+		RefToRef ****repos.FileBookRepo
+	}{}
+
+	if err := fig.Initialize(&holder); err != nil {
+		t.Fatal(err)
+	}
+
+	if holder.RefToRef == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+	if (***holder.RefToRef).Get() != "qwqe" {
+		t.Error("Incorrect impl injected")
 	}
 }

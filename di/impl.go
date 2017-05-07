@@ -279,28 +279,6 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 			return err
 		}
 
-	case reflect.Ptr:
-		// TODO: we want be able to set basic values with reference type(optional parameters)
-		if valueSetup.holderElementField.Type().Elem().Kind() == reflect.Struct {
-			var canBeSet []interface{}
-			for registeredType, injectableObj := range valueSetup.fig.registered {
-				if registeredType.AssignableTo(valueSetup.holderElementField.Type()) {
-					if valueSetup.recursive && !valueSetup.fig.assembled[registeredType] {
-						if err := valueSetup.fig.assemble(injectableObj, valueSetup.recursive); err != nil {
-							return err
-						}
-					}
-					canBeSet = append(canBeSet, injectableObj)
-				}
-			}
-			if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag); err != nil {
-				return err
-			}
-		} else {
-			//fmt.Println("WARNING: TODO: we want be able to set basic values with reference type(optional parameters)")
-			return FigError{Cause: "Can't inject to non-struct reference fields", Error_: ErrorCannotBeHolder}
-		}
-
 	case reflect.Struct:
 		var canBeSet []interface{}
 		for registeredType, injectableObj := range valueSetup.fig.registered {
@@ -314,6 +292,15 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 			}
 		}
 		if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag); err != nil {
+			return err
+		}
+
+	case reflect.Ptr:
+		for valueSetup.holderElementField.Kind() == reflect.Ptr {
+			valueSetup.holderElementField.Set(reflect.New(valueSetup.holderElementField.Type().Elem()))
+			valueSetup.holderElementField = valueSetup.holderElementField.Elem()
+		}
+		if err := valueSetup.Do(); err != nil {
 			return err
 		}
 
