@@ -11,7 +11,9 @@ import (
 )
 
 const (
-	FIG_TAG      = "fig"
+	// fig tag itself
+	FIG_TAG = "fig"
+	// configurations for fig tag
 	IMPL_TAG_KEY = "impl"
 	ENV_TAG_KEY  = "env"
 	SKIP_TAG_KEY = "skip"
@@ -355,17 +357,17 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 			valueSetup.holderElementField.Addr().Elem().Set(reflect.ValueOf(envVal))
 		}
 
-	case
-		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Float32, reflect.Float64,
-		reflect.Bool,
-		reflect.Slice,
-		reflect.Map,
-		reflect.Complex64, reflect.Complex128,
-		reflect.Array,
-		reflect.Chan,
-		reflect.Func:
-		return FigError{Cause: "Unsupported holder field type: " + valueSetup.holderElementField.String(), Error_: ErrorCannotBeHolder}
+	//case
+	//	reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+	//	reflect.Float32, reflect.Float64,
+	//	reflect.Bool,
+	//	reflect.Slice,
+	//	reflect.Map,
+	//	reflect.Complex64, reflect.Complex128,
+	//	reflect.Array,
+	//	reflect.Chan,
+	//	reflect.Func:
+	//	return FigError{Cause: "Unsupported holder field type: " + valueSetup.holderElementField.String(), Error_: ErrorCannotBeHolder}
 	default:
 		return FigError{Cause: "Unsupported holder field type: " + valueSetup.holderElementField.String(), Error_: ErrorCannotBeHolder}
 	}
