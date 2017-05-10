@@ -9,7 +9,7 @@ type MemUserRepo struct {
 }
 
 func (mur *MemUserRepo) Find() []string {
-	return []string{"repos", mur.Message}
+	return []string{"mem", mur.Message}
 }
 
 type FileUserRepo struct {
@@ -17,5 +17,5 @@ type FileUserRepo struct {
 }
 
 func (fur *FileUserRepo) Find() []string {
-	return []string{"repos", fur.Message}
+	return []string{"file", fur.Message}
 }

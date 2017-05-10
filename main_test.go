@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/pavelmemory/fig/di"
+	"github.com/pavelmemory/fig/fig"
 	"github.com/pavelmemory/fig/repos"
 	"github.com/pavelmemory/fig/repos2"
 	"os"
@@ -9,20 +9,20 @@ import (
 )
 
 func TestFig_InitializeStructWithInterfaces(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(
+	injector := fig.New(false)
+	injector.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos.FileBookRepo{},
 		new(repos.MemOrderRepo),
 	)
 
 	rps := new(repos.Module)
-	if err := fig.Initialize(rps); err != nil {
+	if err := injector.Initialize(rps); err != nil {
 		t.Fatal(err)
 	}
 
 	find := rps.Find()
-	if find[0] != "repos" || find[1] != "Message" {
+	if find[0] != "file" || find[1] != "Message" {
 		t.Error("Find() failed")
 	}
 
@@ -36,8 +36,8 @@ func TestFig_InitializeStructWithInterfaces(t *testing.T) {
 }
 
 func TestFig_InitializeStructWithInterfacesMultipleImpls(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(
+	injector := fig.New(false)
+	injector.Register(
 		&repos.FileUserRepo{Message: "File"},
 		&repos.MemUserRepo{Message: "Mem"},
 		&repos.FileBookRepo{},
@@ -45,12 +45,12 @@ func TestFig_InitializeStructWithInterfacesMultipleImpls(t *testing.T) {
 	)
 
 	rps := new(repos.Module)
-	if err := fig.Initialize(rps); err != nil {
+	if err := injector.Initialize(rps); err != nil {
 		t.Error(err)
 	}
 
 	find := rps.Find()
-	if find[0] != "repos" || find[1] != "File" {
+	if find[0] != "file" || find[1] != "File" {
 		t.Error("Find() failed")
 	}
 
@@ -64,8 +64,8 @@ func TestFig_InitializeStructWithInterfacesMultipleImpls(t *testing.T) {
 }
 
 func TestFig_Initialize_UnnamedStructWithInterfacesAndValue(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(
+	injector := fig.New(false)
+	injector.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos.FileBookRepo{},
 		repos.MemOrderRepo{},
@@ -76,12 +76,12 @@ func TestFig_Initialize_UnnamedStructWithInterfacesAndValue(t *testing.T) {
 		*repos.FileBookRepo
 		repos.MemOrderRepo
 	}{}
-	if err := fig.Initialize(&repo); err != nil {
+	if err := injector.Initialize(&repo); err != nil {
 		t.Fatal(err)
 	}
 
 	find := repo.Find()
-	if find[0] != "repos" || find[1] != "Message" {
+	if find[0] != "file" || find[1] != "Message" {
 		t.Error("Find() failed")
 	}
 
@@ -95,8 +95,8 @@ func TestFig_Initialize_UnnamedStructWithInterfacesAndValue(t *testing.T) {
 }
 
 func TestFig_Initialize_MultipleImplsWithSameStructNameWithoutExplicitDefinition(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(
+	injector := fig.New(false)
+	injector.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos2.FileUserRepo{Message: "Message2"},
 	)
@@ -104,20 +104,20 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithoutExplicitDefinition
 	repo := struct {
 		repos.UserRepo
 	}{}
-	err := fig.Initialize(&repo)
+	err := injector.Initialize(&repo)
 	if err == nil {
 		t.Error("Multiple implementations registered require implicit definition of one to choose")
 	}
-	figErr := err.(di.FigError)
-	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+	figErr := err.(fig.FigError)
+	if figErr.Error_ != fig.ErrorCannotDecideImplementation {
 		t.Log(err)
 		t.Error("unexpected error")
 	}
 }
 
 func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(
+	injector := fig.New(false)
+	injector.Register(
 		&repos.FileUserRepo{Message: "Message"},
 		&repos2.FileUserRepo{Message: "Message2"},
 	)
@@ -125,7 +125,7 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t 
 	repo := struct {
 		repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/repos2/FileUserRepo]"`
 	}{}
-	err := fig.Initialize(&repo)
+	err := injector.Initialize(&repo)
 	if err != nil {
 		t.Error("Multiple implementations registered require implicit definition of one to choose")
 	}
@@ -135,8 +135,8 @@ func TestFig_Initialize_MultipleImplsWithSameStructNameWithExplicitDefinition(t 
 }
 
 func TestFig_Initialize_InnerFieldsShouldBeInjectedAutomaticallyIfRegistered(t *testing.T) {
-	fig := di.New(false)
-	if err := fig.Register(
+	injector := fig.New(false)
+	if err := injector.Register(
 		&repos.MemUserRepo{Message: "Memory"},
 		&repos.FileUserRepo{Message: "File"},
 		repos.FileBookRepo{},
@@ -148,7 +148,7 @@ func TestFig_Initialize_InnerFieldsShouldBeInjectedAutomaticallyIfRegistered(t *
 	nested := struct {
 		*repos.Module
 	}{}
-	if err := fig.Initialize(&nested); err != nil {
+	if err := injector.Initialize(&nested); err != nil {
 		t.Fatal(err)
 	}
 	if nested.Module.BookRepo == nil {
@@ -162,13 +162,13 @@ func Test_Initialize_EnvVar(t *testing.T) {
 	defer func() {
 		os.Unsetenv(envKey)
 	}()
-	fig := di.New(false)
+	injector := fig.New(false)
 
 	holder := struct {
 		EnvName string `fig:"env[ENV_NAME]"`
 	}{}
 
-	if err := fig.Initialize(&holder); err != nil {
+	if err := injector.Initialize(&holder); err != nil {
 		t.Error(err)
 	}
 
@@ -183,8 +183,8 @@ func Test_Initialize_Skip(t *testing.T) {
 	defer func() {
 		os.Unsetenv(envKey)
 	}()
-	fig := di.New(false)
-	fig.Register(&repos2.FileUserRepo{})
+	injector := fig.New(false)
+	injector.Register(&repos2.FileUserRepo{})
 
 	holder := struct {
 		UserRepoShouldBeNil  repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/repos2/FileUserRepo] skip[true]"`
@@ -192,7 +192,7 @@ func Test_Initialize_Skip(t *testing.T) {
 		EnvName              string         `fig:"env[ENV_NAME] skip[true]"`
 	}{}
 
-	if err := fig.Initialize(&holder); err != nil {
+	if err := injector.Initialize(&holder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -209,18 +209,18 @@ func Test_Initialize_Skip(t *testing.T) {
 }
 
 func Test_Initialize_RegisterValue(t *testing.T) {
-	fig := di.New(false)
+	injector := fig.New(false)
 	regValue := new(int)
 	*regValue = 100
-	fig.RegisterValue("regKey", regValue)
-	fig.RegisterValue("regKey2", rune(100))
+	injector.RegisterValue("regKey", regValue)
+	injector.RegisterValue("regKey2", rune(100))
 
 	holder := struct {
 		RegValue     *int `fig:"reg[regKey]"`
 		RegValueSkip rune `fig:"reg[regKey2] skip[true]"`
 	}{}
 
-	if err := fig.Initialize(&holder); err != nil {
+	if err := injector.Initialize(&holder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -234,45 +234,45 @@ func Test_Initialize_RegisterValue(t *testing.T) {
 }
 
 func Test_Initialize_RegisterValueNotFound(t *testing.T) {
-	fig := di.New(false)
+	injector := fig.New(false)
 
 	holder := struct {
 		RegValue int `fig:"reg[regKey]"`
 	}{}
 
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err == nil {
 		t.Fatal("Should singal error")
 	}
-	figErr := err.(di.FigError)
-	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+	figErr := err.(fig.FigError)
+	if figErr.Error_ != fig.ErrorCannotDecideImplementation {
 		t.Error("Should be that type of error")
 	}
 }
 
 func Test_Initialize_OnlyWithFigTag(t *testing.T) {
-	fig := di.New(true)
-	fig.Register(new(repos.FileUserRepo))
+	injector := fig.New(true)
+	injector.Register(new(repos.FileUserRepo))
 	holder := struct {
 		DoesNotNeedToInject repos.UserRepo
 		NeedToInject        repos.UserRepo `fig:""`
 	}{}
 
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if holder.DoesNotNeedToInject != nil {
-		t.Error("Fields without `fig` tag should not be injected")
+		t.Error("Fields without `injector` tag should not be injected")
 	}
 	if holder.NeedToInject == nil {
-		t.Error("Fields without `fig` must be injected")
+		t.Error("Fields without `injector` must be injected")
 	}
 }
 
 func Test_Initialize_RecursiveInjectionToUnnamedStructs(t *testing.T) {
-	fig := di.New(false)
-	fig.Register(new(repos.FileUserRepo))
+	injector := fig.New(false)
+	injector.Register(new(repos.FileUserRepo))
 	holder := struct {
 		FirstLevel struct {
 			JustSimpleFieldOnFirstLevel string
@@ -283,7 +283,7 @@ func Test_Initialize_RecursiveInjectionToUnnamedStructs(t *testing.T) {
 		}
 	}{}
 
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,11 +313,11 @@ func Test_Initialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 		os.Unsetenv(envKey)
 	}()
 
-	fig := di.New(false)
-	fig.Register(&repos.FileUserRepo{Message: "File"})
+	injector := fig.New(false)
+	injector.Register(&repos.FileUserRepo{Message: "File"})
 	holder := holderWithReferenceFields{}
 
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,12 +341,12 @@ type secondLevelReferenceStructWithoutDependencies struct {
 }
 
 func Test_Initialize_RecursiveInjectionToReferenceFieldsWithoutDependencies(t *testing.T) {
-	fig := di.New(false)
+	injector := fig.New(false)
 	holder := struct {
 		FirstLevel *firstLevelReferenceStructWithoutDependencies
 	}{}
 
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,8 +356,8 @@ func Test_Initialize_RecursiveInjectionToReferenceFieldsWithoutDependencies(t *t
 }
 
 func Test_Initialize_PointerToPointer(t *testing.T) {
-	fig := di.New(false)
-	if err := fig.Register(new(repos.FileBookRepo)); err != nil {
+	injector := fig.New(false)
+	if err := injector.Register(new(repos.FileBookRepo)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -365,7 +365,7 @@ func Test_Initialize_PointerToPointer(t *testing.T) {
 		RefToRef ****repos.FileBookRepo
 	}{}
 
-	if err := fig.Initialize(&holder); err != nil {
+	if err := injector.Initialize(&holder); err != nil {
 		t.Fatal(err)
 	}
 
@@ -401,8 +401,8 @@ func (sgwq *StringGetterWithoutQualifier) Get() string {
 }
 
 func Test_Initialize_QualifyDefinedCorrectly(t *testing.T) {
-	fig := di.New(false)
-	if err := fig.Register(
+	injector := fig.New(false)
+	if err := injector.Register(
 		&StringGetterWithQualifier{},
 		&StringGetterWithQualifier{qualifier: "ass"},
 		new(StringGetterWithoutQualifier),
@@ -415,7 +415,7 @@ func Test_Initialize_QualifyDefinedCorrectly(t *testing.T) {
 		ByQualifier StringGetter `fig:"qual[tits]"`
 		ByImpl      StringGetter `fig:"impl[github.com/pavelmemory/fig/StringGetterWithoutQualifier]"`
 	}{}
-	if err := fig.Initialize(&holder); err != nil {
+	if err := injector.Initialize(&holder); err != nil {
 		t.Fatal(err)
 	}
 	if holder.ByQualifier == nil {
@@ -433,8 +433,8 @@ func Test_Initialize_QualifyDefinedCorrectly(t *testing.T) {
 }
 
 func Test_Initialize_QualifyNotDefinedButTagProvided(t *testing.T) {
-	fig := di.New(false)
-	if err := fig.Register(
+	injector := fig.New(false)
+	if err := injector.Register(
 		new(StringGetterWithQualifier),
 		new(StringGetterWithoutQualifier),
 	); err != nil {
@@ -444,14 +444,13 @@ func Test_Initialize_QualifyNotDefinedButTagProvided(t *testing.T) {
 	holder := struct {
 		ByQualifier StringGetter `fig:"qual[tits]"`
 	}{}
-	err := fig.Initialize(&holder)
+	err := injector.Initialize(&holder)
 	if err == nil {
 		t.Fatal("there must be error because nothing in two registered equals to 'qual' value")
 	}
-	figErr := err.(di.FigError)
-	if figErr.Error_ != di.ErrorCannotDecideImplementation {
+	figErr := err.(fig.FigError)
+	if figErr.Error_ != fig.ErrorCannotDecideImplementation {
 		t.Log(err)
 		t.Error("unexpected error")
 	}
 }
-

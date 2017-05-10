@@ -15,7 +15,35 @@ of initialization structs to be injected. If you specify `true`
 ***
 Example
 
-TODO: example for each of explained configuration
+Lets assume we have next entities:
+```
+type UserRepo interface {
+    Find() []string
+}
+
+type MemUserRepo struct {
+    Message string
+}
+
+func (mur *MemUserRepo) Find() []string {
+    return []string{"mem", mur.Message}
+}
+
+type FileUserRepo struct {
+    Message string
+}
+
+func (fur *FileUserRepo) Find() []string {
+    return []string{"file", fur.Message}
+}
+
+type Module struct {
+    Name      string `fig:"env[ENV_NAME]"`
+    UserRepo  `fig:"impl[github.com/pavelmemory/fig/repos/FileUserRepo]"`
+    BookRepo  `fig:""`
+    OrderRepo
+}
+```
 
 
 ****

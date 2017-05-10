@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/pavelmemory/fig/di"
+	"github.com/pavelmemory/fig/fig"
 	"github.com/pavelmemory/fig/repos"
 	"github.com/pavelmemory/fig/services"
 	"os"
@@ -12,7 +12,7 @@ import (
 
 func main() {
 	os.Setenv("ENV_NAME", "DEV")
-	fig := di.New(false)
+	fig := fig.New(false)
 	if err := fig.Register(
 		&repos.MemUserRepo{Message: "Memory"},
 		&repos2.MemUserRepo{Message: "Memory"},
