@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestFig_InitializeNil(t *testing.T) {
+	injector := fig.New(false)
+	err := injector.Initialize(nil)
+	if err == nil {
+		t.Fatal("The error is mandatry in such a case")
+	}
+
+	figErr := err.(fig.FigError)
+	if figErr.Error_ != fig.ErrorCannotBeHolder {
+		t.Error("invalid error reason")
+	}
+}
+
 func TestFig_InitializeStructWithInterfaces(t *testing.T) {
 	injector := fig.New(false)
 	injector.Register(
@@ -159,9 +172,8 @@ func TestFig_Initialize_InnerFieldsShouldBeInjectedAutomaticallyIfRegistered(t *
 func Test_Initialize_EnvVar(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
-	defer func() {
-		os.Unsetenv(envKey)
-	}()
+	defer os.Unsetenv(envKey)
+
 	injector := fig.New(false)
 
 	holder := struct {
@@ -180,9 +192,8 @@ func Test_Initialize_EnvVar(t *testing.T) {
 func Test_Initialize_Skip(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
-	defer func() {
-		os.Unsetenv(envKey)
-	}()
+	defer os.Unsetenv(envKey)
+
 	injector := fig.New(false)
 	injector.Register(&repos2.FileUserRepo{})
 
@@ -205,7 +216,6 @@ func Test_Initialize_Skip(t *testing.T) {
 	if holder.UserRepoShouldBeInit == nil {
 		t.Error("Should be set because skip = false provided")
 	}
-	os.Unsetenv("ENV_NAME")
 }
 
 func Test_Initialize_RegisterValue(t *testing.T) {
@@ -309,9 +319,7 @@ type holderWithReferenceFields struct {
 func Test_Initialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
-	defer func() {
-		os.Unsetenv(envKey)
-	}()
+	defer os.Unsetenv(envKey)
 
 	injector := fig.New(false)
 	injector.Register(&repos.FileUserRepo{Message: "File"})

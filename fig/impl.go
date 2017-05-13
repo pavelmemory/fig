@@ -32,19 +32,11 @@ func getConfigValueForKey(conf string, key string) (string, bool) {
 	}
 
 	valStart := keyStart + len(key)
-	searchFrom := valStart
-	var valEnd int
-	for {
-		valEnd = strings.Index(conf[searchFrom:], "]")
-		if valEnd <= 0 {
-			return "", false
-		}
-		if conf[valEnd-1] == '\\' {
-			searchFrom += valEnd + 1
-		} else {
-			return string(conf[valStart : valEnd+valStart]), true
-		}
+	valEnd := strings.Index(conf[valStart:], "]")
+	if valEnd <= 0 {
+		return "", false
 	}
+	return string(conf[valStart : valStart+valEnd]), true
 }
 
 type Fig struct {
