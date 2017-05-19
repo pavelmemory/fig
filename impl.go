@@ -10,6 +10,10 @@ import (
 	"sync"
 )
 
+type Qualifier interface {
+	Qualify() string
+}
+
 const (
 	// fig tag itself
 	FIG_TAG = "fig"
@@ -98,6 +102,15 @@ func (fig *Fig) RegisterValue(key string, value interface{}) error {
 		return ErrorRegisteredValueOverridden
 	}
 	fig.registeredValues[key] = value
+	return nil
+}
+
+func (fig *Fig) RegisterValues(keyValues map[string]interface{}) error {
+	for key, value := range keyValues {
+		if err := fig.RegisterValue(key, value); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -222,23 +235,11 @@ func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value,
 }
 
 func checkQualifier(canBe interface{}, qualFigConf string) (bool, error) {
-	canBeValue := reflect.ValueOf(canBe)
-	qualifyMethod := canBeValue.MethodByName("Qualify")
-	if !qualifyMethod.IsValid() {
-		return false, FigError{
-			Cause:  fmt.Sprintf("type has no 'Qualify' method defined: %T", canBe),
-			Error_: ErrorCannotDecideImplementation,
+	canBeType := reflect.TypeOf(canBe)
+	if canBeType.Implements(reflect.TypeOf((*Qualifier)(nil)).Elem()) {
+		if canBe.(Qualifier).Qualify() == qualFigConf {
+			return true, nil
 		}
-	}
-	qualifyValue := qualifyMethod.Call(nil)
-	if len(qualifyValue) != 1 && qualifyValue[0].Kind() != reflect.String {
-		return false, FigError{
-			Cause:  fmt.Sprintf("'Qualify' method of %T has incorrect signature", canBe),
-			Error_: ErrorCannotDecideImplementation,
-		}
-	}
-	if qualifyValue[0].String() == qualFigConf {
-		return true, nil
 	}
 	return false, nil
 }

@@ -15,37 +15,77 @@ of initialization structs to be injected. If you specify `true`
 ***
 Example
 
-Lets assume we have next entities:
-```
+Lets assume we have next `main.go` file with some structs and we want to avoid 
+manual assignments of all dependencies, so you can simply 
+inject them.
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/pavelmemory/fig"
+)
+
 type UserRepo interface {
     Find() []string
 }
 
 type MemUserRepo struct {
-    Message string
+    message string
 }
 
 func (mur *MemUserRepo) Find() []string {
-    return []string{"mem", mur.Message}
+    return []string{"mem", mur.message}
 }
 
 type FileUserRepo struct {
-    Message string
+    message string
 }
 
 func (fur *FileUserRepo) Find() []string {
-    return []string{"file", fur.Message}
+    return []string{"file", fur.message}
+}
+
+type OrderRepo struct {
+}
+
+func (or *OrderRepo) Create() string {
+    return "order created"
 }
 
 type Module struct {
     Name      string `fig:"env[ENV_NAME]"`
-    UserRepo  `fig:"impl[github.com/pavelmemory/fig/repos/FileUserRepo]"`
-    BookRepo  `fig:""`
-    OrderRepo
+    OrderRepo *OrderRepo
+    UserRepo
+}
+
+func main() {
+    injector := fig.New(false)
+    err := injector.Register(
+        &MemUserRepo{message: "mes_1"},
+    )
+    if err != nil {
+        panic(fmt.Sprintf("%#v", err))
+    }
+    
+    module := new(Module)
+    
+    err = injector.Initialize(module)
+    if err != nil {
+        panic(fmt.Sprintf("%#v", err))
+    }
+        
+    fmt.Println(module.Name)
+    fmt.Println(module.Find())
+    fmt.Println(module.OrderRepo.Create())
 }
 ```
-
-
+Result of execution of command `ENV_NAME=DEV go run main.go` will be following:
+```text
+DEV
+[mem, mes_1]
+order created
+```
 ****
 Multiple implementations of interface
 
@@ -68,7 +108,9 @@ in case you have registered multiple implementations
 of one interface. Implementation will be chosen based on
 value provided in this config and value that will be
 returned by `Qualify() string` method of one of
-registered implementations.
+registered implementations. If no one of candidates implements
+`Qualifier` interface or no equal to specified string returned
+it will lead to an error.
 
 ***
 Example
@@ -97,10 +139,12 @@ TODO: example for each of explained configuration
 Environment variables injection
 
 Scenario when you need some environment variable value is quite
-popular, so there is solution for it. Tag configuration `env` solves
-problem with manual initialization of such values.
+popular, so there is solution for that. Tag configuration `env` solves
+the problem of manual initialization of such values.
 - env - expected value is any string that can represent key of
-environment variable. Value of this variable will be assigned to field
+environment variable. Value of this environment variable will be assigned to field.
+There is no way to provide default value, so in such a case it is better to use `reg`
+configuration.
 
 ***
 Example
