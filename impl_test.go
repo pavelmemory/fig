@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/pavelmemory/fig/example/src/otherrepos"
-	"github.com/pavelmemory/fig/example/src/repos"
+	"github.com/pavelmemory/fig/examples/src/otherrepos"
+	"github.com/pavelmemory/fig/examples/src/repos"
 )
 
 func FatalIfError(command func() error) {
@@ -69,7 +69,7 @@ func Example_InitializeStructWithMultipleInterfaceImplementations() {
 	})
 
 	holder := &struct {
-		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/example/src/repos/FileUserRepo]"`
+		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/repos/FileUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
@@ -118,7 +118,7 @@ func Example_InitializeStructWithReference() {
 	// create order in memory
 }
 
-func Test_InitializeInterfaceWithMultipleImplementationsWithSameStructNameWithoutExplicitDefinition(t *testing.T) {
+func TestInitialize_InterfaceWithMultipleImplementationsWithSameStructNameWithoutExplicitDefinition(t *testing.T) {
 	injector := New(false)
 	FatalIfError(func() error {
 		return injector.Register(
@@ -151,7 +151,7 @@ func Example_InitializeInterfaceWithMultipleImplementationsWithSameStructNameWit
 	})
 
 	holder := &struct {
-		repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/example/src/otherrepos/MemUserRepo]"`
+		repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/otherrepos/MemUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
@@ -186,7 +186,7 @@ func Example_InitializeInnerFieldsShouldBeInjectedAutomaticallyIfRegistered() {
 	// remove 100 order from memory
 }
 
-func Test_Initialize_EnvVar(t *testing.T) {
+func TestInitialize_EnvVar(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
 	defer os.Unsetenv(envKey)
@@ -211,7 +211,7 @@ func Example_InitializeExplicitImplementationSpecificationSkippedIfSingleImpleme
 	})
 
 	holder := &struct {
-		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/example/src/repos/MemUserRepo]"`
+		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/repos/MemUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
@@ -222,7 +222,7 @@ func Example_InitializeExplicitImplementationSpecificationSkippedIfSingleImpleme
 	// find user LOLLY in file
 }
 
-func Test_Initialize_Skip(t *testing.T) {
+func TestInitialize_Skip(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
 	defer os.Unsetenv(envKey)
@@ -257,7 +257,7 @@ func Test_Initialize_Skip(t *testing.T) {
 	}
 }
 
-func Test_Initialize_RegisterValue(t *testing.T) {
+func TestInitialize_RegisterValue(t *testing.T) {
 	injector := New(false)
 	regValue := new(int)
 	*regValue = 100
@@ -288,7 +288,7 @@ func Test_Initialize_RegisterValue(t *testing.T) {
 	holder.RegValueSkipFalse[1] = 1 // if map is not initialized panic will happen
 }
 
-func Test_InitializeRegisterValueNotFound(t *testing.T) {
+func TestInitialize_RegisterValueNotFound(t *testing.T) {
 	injector := New(false)
 
 	holder := &struct {
@@ -328,7 +328,7 @@ func Example_InitializeOnlyWithFigTag() {
 	// save user Igor to file
 }
 
-func Test_InitializeRecursiveInjectionToUnnamedStructs(t *testing.T) {
+func TestInitialize_RecursiveInjectionToUnnamedStructs(t *testing.T) {
 	regValue := "DEV"
 	injector := New(false)
 	FatalIfError(func() error {
@@ -375,7 +375,7 @@ type holderWithReferenceFields struct {
 	FirstLevel *firstLevelReferenceStruct
 }
 
-func Test_InitializeRecursiveInjectionToReferenceFields(t *testing.T) {
+func TestInitialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
 	defer os.Unsetenv(envKey)
@@ -398,7 +398,7 @@ func Test_InitializeRecursiveInjectionToReferenceFields(t *testing.T) {
 	}
 }
 
-func Test_InitializeNoRecursiveInjectionToReferenceFieldsWithoutExplicitFigTag(t *testing.T) {
+func TestInitialize_NoRecursiveInjectionToReferenceFieldsWithoutExplicitFigTag(t *testing.T) {
 	envKey, envValue := "ENV_NAME", "DEV"
 	os.Setenv(envKey, envValue)
 	defer os.Unsetenv(envKey)
@@ -427,7 +427,7 @@ type secondLevelReferenceStructWithoutDependencies struct {
 	JustSimpleFieldOnSecondLevel string
 }
 
-func Test_InitializeRecursiveInjectionToReferenceFieldsWithoutDependencies(t *testing.T) {
+func TestInitialize_RecursiveInjectionToReferenceFieldsWithoutDependencies(t *testing.T) {
 	injector := New(false)
 	holder := &struct {
 		FirstLevel *firstLevelReferenceStructWithoutDependencies
@@ -442,7 +442,7 @@ func Test_InitializeRecursiveInjectionToReferenceFieldsWithoutDependencies(t *te
 	}
 }
 
-func Test_Initialize_PointerToPointer(t *testing.T) {
+func TestInitialize_PointerToPointer(t *testing.T) {
 	injector := New(false)
 	FatalIfError(func() error {
 		return injector.Register(new(repos.FileUserRepo))
@@ -485,7 +485,7 @@ func (sgwq *StringGetterWithoutQualifier) Get() string {
 	return "something"
 }
 
-func Test_InitializeQualifyDefinedCorrectly(t *testing.T) {
+func TestInitialize_QualifyDefinedCorrectly(t *testing.T) {
 	injector := New(false)
 	FatalIfError(func() error {
 		return injector.Register(
@@ -519,7 +519,7 @@ func Test_InitializeQualifyDefinedCorrectly(t *testing.T) {
 	}
 }
 
-func Test_Initialize_QualifyNotDefinedButTagProvided(t *testing.T) {
+func TestInitialize_QualifyNotDefinedButTagProvided(t *testing.T) {
 	injector := New(false)
 	FatalIfError(func() error {
 		return injector.Register(
@@ -541,5 +541,24 @@ func Test_Initialize_QualifyNotDefinedButTagProvided(t *testing.T) {
 	if figErr.Error_ != ErrorCannotDecideImplementation {
 		t.Log(err)
 		t.Error("unexpected error")
+	}
+}
+
+func TestInitialize_IncorrectFigTagConfigSKIP(t *testing.T) {
+	incorrectDefinitionsOfFigTag := []interface{} {
+		&struct { F string `fig:"skip"` }{},
+		&struct { F string `fig:"skip[true"` }{},
+		&struct { F string `fig:"skip]"` }{},
+		&struct { F string `fig:"skip[]"` }{},
+		&struct { F string `fig:"skip[   ]"` }{},
+		&struct { F string `fig:"skip[12]"` }{},
+		&struct { F string `fig:"impl[something] skip"` }{},
+	}
+	injector := New(false)
+	for _, incorrectDefinitionOfFigTag := range incorrectDefinitionsOfFigTag {
+		err := injector.Initialize(incorrectDefinitionOfFigTag)
+		if err != nil {
+			t.Error(fmt.Sprintf("Initialization error expected for type: %#v", incorrectDefinitionOfFigTag))
+		}
 	}
 }

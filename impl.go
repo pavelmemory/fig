@@ -436,11 +436,16 @@ func NewSkipCheck(tag reflect.StructTag) *InjectStepSkipCheck {
 
 func (skipVerify *InjectStepSkipCheck) Do() error {
 	if skipConfValue, found := getFigTagConfig(skipVerify.tag, SKIP_TAG_KEY); found {
-		if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
-			return err
-		} else if needSkip {
+		if skipConfValue == "true" {
 			skipVerify.skip = true
+		} else if skipConfValue != "false" {
+			return FigError{Cause: "Incorrectly defined `fig` tag config", Error_: ErrorCannotBeHolder}
 		}
+		//if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
+		//	return err
+		//} else if needSkip {
+		//	skipVerify.skip = true
+		//}
 	}
 	return nil
 }
