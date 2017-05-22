@@ -457,7 +457,7 @@ func TestInitialize_PointerToPointer(t *testing.T) {
 	})
 
 	if holder.RefToRef == nil {
-		t.Error("Nested structs were not populated properly")
+		t.Fatal("Nested structs were not populated properly")
 	}
 	(***holder.RefToRef).Save("Eva")
 }
@@ -545,20 +545,280 @@ func TestInitialize_QualifyNotDefinedButTagProvided(t *testing.T) {
 }
 
 func TestInitialize_IncorrectFigTagConfigSKIP(t *testing.T) {
-	incorrectDefinitionsOfFigTag := []interface{} {
-		&struct { F string `fig:"skip"` }{},
-		&struct { F string `fig:"skip[true"` }{},
-		&struct { F string `fig:"skip]"` }{},
-		&struct { F string `fig:"skip[]"` }{},
-		&struct { F string `fig:"skip[   ]"` }{},
-		&struct { F string `fig:"skip[12]"` }{},
-		&struct { F string `fig:"impl[something] skip"` }{},
-	}
 	injector := New(false)
+	incorrectDefinitionsOfFigTag := []interface{}{
+		&struct {
+			F string `fig:"skip[true"`
+		}{},
+		&struct {
+			F string `fig:"skip[]"`
+		}{},
+		&struct {
+			F string `fig:"skip[   ]"`
+		}{},
+		&struct {
+			F string `fig:"skip[12]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag, injector, t, ErrorIncorrectTagConfiguration)
+}
+
+func TestInitialize_IncorrectFigTagConfigENV(t *testing.T) {
+	injector := New(false)
+	incorrectDefinitionsOfFigTag := []interface{}{
+		&struct {
+			F string `fig:"env[true"`
+		}{},
+		&struct {
+			F string `fig:"env[]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag, injector, t, ErrorIncorrectTagConfiguration)
+}
+
+func TestInitialize_IncorrectFigTagConfigQUAL(t *testing.T) {
+	injector := New(false)
+	FatalIfError(func() error {
+		return injector.Register(new(repos.FileUserRepo), new(repos.MemUserRepo))
+	})
+
+	incorrectDefinitionsOfFigTag := []interface{}{
+		&struct {
+			repos.UserRepo `fig:"qual[anything"`
+		}{},
+		&struct {
+			repos.UserRepo `fig:"qual[]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag, injector, t, ErrorIncorrectTagConfiguration)
+
+	incorrectDefinitionsOfFigTagConfValue := []interface{}{
+		&struct {
+			repos.UserRepo `fig:"qual[anything]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTagConfValue, injector, t, ErrorCannotDecideImplementation)
+}
+
+func TestInitialize_IncorrectFigTagConfigREG(t *testing.T) {
+	injector := New(false)
+
+	incorrectDefinitionsOfFigTag := []interface{}{
+		&struct {
+			F string `fig:"reg[some"`
+		}{},
+		&struct {
+			F string `fig:"reg[]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag, injector, t, ErrorIncorrectTagConfiguration)
+
+	incorrectDefinitionsOfFigTagConfValue := []interface{}{
+		&struct {
+			F string `fig:"reg[some]"`
+		}{},
+		&struct {
+			F string `fig:"reg[    ]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTagConfValue, injector, t, ErrorCannotDecideImplementation)
+}
+
+func TestInitialize_IncorrectFigTagConfigIMPL(t *testing.T) {
+	injector := New(false)
+	FatalIfError(func() error {
+		return injector.Register(new(repos.FileUserRepo), new(repos.MemUserRepo))
+	})
+
+	incorrectDefinitionsOfFigTag := []interface{}{
+		&struct {
+			repos.UserRepo `fig:"impl[anything"`
+		}{},
+		&struct {
+			repos.UserRepo `fig:"impl[]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag, injector, t, ErrorIncorrectTagConfiguration)
+
+	incorrectDefinitionsOfFigTagConfValue := []interface{}{
+		&struct {
+			repos.UserRepo `fig:"impl[   ]"`
+		}{},
+		&struct {
+			repos.UserRepo `fig:"impl[12]"`
+		}{},
+	}
+	validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTagConfValue, injector, t, ErrorCannotDecideImplementation)
+}
+
+func validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag []interface{}, injector *Fig, t *testing.T, expErr error) {
 	for _, incorrectDefinitionOfFigTag := range incorrectDefinitionsOfFigTag {
 		err := injector.Initialize(incorrectDefinitionOfFigTag)
-		if err != nil {
-			t.Error(fmt.Sprintf("Initialization error expected for type: %#v", incorrectDefinitionOfFigTag))
+		if err == nil {
+			t.Fatalf("Initialization error expected for type: %#v", incorrectDefinitionOfFigTag)
 		}
+		if figError, ok := err.(FigError); ok {
+			if figError.Error_ != expErr {
+				t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+			}
+		} else {
+			t.Error(fmt.Sprintf("Unexpected type of error: %#v", err))
+		}
+	}
+}
+
+func TestRegister_Errors(t *testing.T) {
+	injector := New(false)
+	for _, cannotBeRegistered := range []interface{} {
+		100,
+		make(map[string]struct{}),
+		nil,
+		[]byte{},
+	} {
+		nilRegistrationError := injector.Register(cannotBeRegistered)
+		if nilRegistrationError == nil {
+			t.Fatal("We must not be able to register nil")
+		}
+		if figError, ok := nilRegistrationError.(FigError); ok {
+			if figError.Error_ != ErrorCannotBeRegistered {
+				t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+			}
+		} else {
+			t.Fatalf("Unexpected type of error: %#v", nilRegistrationError)
+		}
+	}
+}
+
+func TestRegisterValue_Errors(t *testing.T) {
+	injector := New(false)
+	nilRegistrationError := injector.RegisterValue("file_user_repo", nil)
+	if nilRegistrationError == nil {
+		t.Fatal("We must not be able to register nil value")
+	}
+	if figError, ok := nilRegistrationError.(FigError); ok {
+		if figError.Error_ != ErrorCannotBeRegistered {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatalf("Unexpected type of error: %#v", nilRegistrationError)
+	}
+
+	FatalIfError(func() error {
+		return injector.RegisterValue("a", 1)
+	})
+
+	errValueOverriden := injector.RegisterValue("a", 2)
+	if errValueOverriden == nil {
+		t.Fatal("We need to know that we override existing value")
+	}
+	if figError, ok := errValueOverriden.(FigError); ok {
+		if figError.Error_ != ErrorRegisteredValueOverridden {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatalf("Unexpected type of error: %#v", errValueOverriden)
+	}
+}
+
+func TestRegisterValues_Errors(t *testing.T) {
+	injector := New(false)
+	nilRegistrationError := injector.RegisterValues(map[string]interface{}{
+		"valid":   12,
+		"invalid": nil,
+	})
+	if nilRegistrationError == nil {
+		t.Fatal("We must not be able to register nil value")
+	}
+	if figError, ok := nilRegistrationError.(FigError); ok {
+		if figError.Error_ != ErrorCannotBeRegistered {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatalf("Unexpected type of error: %#v", nilRegistrationError)
+	}
+
+	key1 := "a"
+	key2 := "a"
+	errValueOverridden := injector.RegisterValues(map[string]interface{}{
+		key1: 1,
+		key2: 2,
+	})
+
+	if errValueOverridden != nil {
+		t.Fatal("It is impossible for maps to have same keys")
+	}
+}
+
+func TestInitialize_OnlyPointersToStructsAllowed(t *testing.T) {
+	injector := New(false)
+	for _, holder := range []interface{}{
+		100,
+		"str",
+		'c',
+		[]byte{},
+		make(map[int]struct{}),
+		struct{ f string }{},
+	} {
+		err := injector.Initialize(holder)
+		if err == nil {
+			t.Errorf("We expect error for: %#v", holder)
+		}
+	}
+}
+
+type StubUserRepo struct {
+	repos.OrderRepo
+}
+
+var _ repos.UserRepo = new(StubUserRepo)
+
+func (*StubUserRepo) Find(name string) {}
+func (*StubUserRepo) Save(name string) {}
+
+func TestInitialize_ErrorIfInitializationToRegisteredValueFailed(t *testing.T) {
+	injector := New(false)
+	FatalIfError(func() error {
+		return injector.Register(new(StubUserRepo))
+	})
+
+	holder := &struct {
+		repos.UserRepo
+	}{}
+	err := injector.Initialize(holder)
+	if err == nil {
+		t.Fatalf("We expect error for: %#v", holder)
+	}
+	if figError, ok := err.(FigError); ok {
+		if figError.Error_ != ErrorCannotDecideImplementation {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatal(fmt.Sprintf("Unexpected type of error: %#v", err))
+	}
+}
+
+type AggregationUserRepo struct {
+	UserRepo *repos.FileUserRepo
+}
+
+func TestInitialize_CircleImplementation(t *testing.T) {
+	injector := New(false)
+	FatalIfError(func() error {
+		return injector.Register(new(AggregationUserRepo))
+	})
+
+	holder := &struct {
+		repos.UserRepo
+	}{}
+	err := injector.Initialize(holder)
+	if err == nil {
+		t.Fatalf("We expect error for: %#v", holder)
+	}
+	if figError, ok := err.(FigError); ok {
+		if figError.Error_ != ErrorCannotDecideImplementation {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatal(fmt.Sprintf("Unexpected type of error: %#v", err))
 	}
 }

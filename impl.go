@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -25,22 +24,26 @@ const (
 	QUAL_TAG_KEY = "qual"
 )
 
-func getConfigValueForKey(conf string, key string) (string, bool) {
-	key += "["
-	keyStart := strings.Index(conf, key)
+func getConfigValueForKey(conf string, key string) (string, bool, error) {
+	confHolder := key + "["
+	keyStart := strings.Index(conf, confHolder)
 	if keyStart < 0 {
-		return "", false
-	}
-	if keyStart > 0 && !(conf[keyStart-1] == ' ' || conf[keyStart-1] == ']') {
-		return "", false
+		return "", false, nil
 	}
 
-	valStart := keyStart + len(key)
+	//if keyStart > 0 && !(conf[keyStart-1] == ' ' || conf[keyStart-1] == ']') {
+	//	return "", false
+	//}
+
+	valStart := keyStart + len(confHolder)
 	valEnd := strings.Index(conf[valStart:], "]")
 	if valEnd <= 0 {
-		return "", false
+		return "", false, FigError{
+			Cause:  "Invalid configuration in: " + conf + " for configuration: " + key,
+			Error_: ErrorIncorrectTagConfiguration,
+		}
 	}
-	return string(conf[valStart : valStart+valEnd]), true
+	return string(conf[valStart : valStart+valEnd]), true, nil
 }
 
 type Fig struct {
@@ -64,10 +67,11 @@ func New(injectOnlyIfFigTagProvided bool) *Fig {
 }
 
 var (
-	ErrorCannotBeRegister           = errors.New("provided value can't be registered")
+	ErrorCannotBeRegistered         = errors.New("provided value can't be registered")
 	ErrorCannotBeHolder             = errors.New("provided value can't be holder")
 	ErrorCannotDecideImplementation = errors.New("not able to get value to inject")
 	ErrorRegisteredValueOverridden  = errors.New("already registered value was overridden")
+	ErrorIncorrectTagConfiguration  = errors.New("invalid `fig` tag configuration")
 )
 
 type FigError struct {
@@ -83,23 +87,30 @@ func (fig *Fig) Register(impls ...interface{}) error {
 	for _, impl := range impls {
 		implType := reflect.TypeOf(impl)
 		if implType == nil {
-			return FigError{Cause: "nil cannot be registered as injectable value", Error_: ErrorCannotBeRegister}
+			return FigError{Cause: "nil cannot be registered as injectable value", Error_: ErrorCannotBeRegistered}
 		}
 
 		if implType.Kind() == reflect.Struct ||
 			implType.Kind() == reflect.Ptr && implType.Elem().Kind() == reflect.Struct {
 			fig.registered[implType] = impl
 		} else {
-			return FigError{Cause: "only structs and references to structs can be registered", Error_: ErrorCannotBeRegister}
+			return FigError{Cause: "only structs and references to structs can be registered", Error_: ErrorCannotBeRegistered}
 		}
 	}
 	return nil
 }
 
 func (fig *Fig) RegisterValue(key string, value interface{}) error {
+	if value == nil {
+		return FigError{
+			Error_: ErrorCannotBeRegistered,
+		}
+	}
 	if _, found := fig.registeredValues[key]; found {
 		fig.registeredValues[key] = value
-		return ErrorRegisteredValueOverridden
+		return FigError{
+			Error_: ErrorRegisteredValueOverridden,
+		}
 	}
 	fig.registeredValues[key] = value
 	return nil
@@ -130,7 +141,7 @@ func (fig *Fig) Initialize(holder interface{}) error {
 }
 
 func isCircleInclusion(this reflect.Type, that reflect.Type) bool {
-	if this.Kind() == reflect.Ptr {
+	for this.Kind() == reflect.Ptr {
 		this = this.Elem()
 	}
 	if this.Kind() == reflect.Struct {
@@ -153,7 +164,7 @@ func (fig *Fig) AssembleRegistered() error {
 	fig.assembleRegisteredOnce.Do(func() {
 		for regType, regObject := range fig.registered {
 			if err = fig.assemble(regObject, true); err != nil {
-				return
+				break
 			}
 			fig.assembled[regType] = true
 		}
@@ -161,11 +172,11 @@ func (fig *Fig) AssembleRegistered() error {
 	return err
 }
 
-func getFigTagConfig(tag reflect.StructTag, key string) (string, bool) {
+func getFigTagConfig(tag reflect.StructTag, key string) (string, bool, error) {
 	if figTag, ok := tag.Lookup(FIG_TAG); ok {
 		return getConfigValueForKey(figTag, key)
 	} else {
-		return "", false
+		return "", false, nil
 	}
 }
 
@@ -185,9 +196,7 @@ func setByImplConf(canBeSet []interface{}, elementField reflect.Value, implFigCo
 
 func setByQualConf(canBeSet []interface{}, elementField reflect.Value, qualFigConf string) error {
 	for _, canBe := range canBeSet {
-		if met, err := checkQualifier(canBe, qualFigConf); err != nil {
-			return err
-		} else if met {
+		if checkQualifier(canBe, qualFigConf) {
 			elementField.Addr().Elem().Set(reflect.ValueOf(canBe))
 			return nil
 		}
@@ -201,9 +210,13 @@ func setByQualConf(canBeSet []interface{}, elementField reflect.Value, qualFigCo
 func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value, tag reflect.StructTag) error {
 	switch {
 	case len(canBeSet) > 1:
-		if implFigConf, found := getFigTagConfig(tag, IMPL_TAG_KEY); found {
+		if implFigConf, found, err := getFigTagConfig(tag, IMPL_TAG_KEY); err != nil {
+			return err
+		} else if found {
 			return setByImplConf(canBeSet, elementField, implFigConf)
-		} else if qualFigConf, found := getFigTagConfig(tag, QUAL_TAG_KEY); found {
+		} else if qualFigConf, found, err := getFigTagConfig(tag, QUAL_TAG_KEY); err != nil {
+			return err
+		} else if found {
 			return setByQualConf(canBeSet, elementField, qualFigConf)
 		} else {
 			mes := "can't chose implementation for " + elementField.String() + ":\n"
@@ -234,14 +247,14 @@ func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value,
 	return nil
 }
 
-func checkQualifier(canBe interface{}, qualFigConf string) (bool, error) {
+func checkQualifier(canBe interface{}, qualFigConf string) bool {
 	canBeType := reflect.TypeOf(canBe)
 	if canBeType.Implements(reflect.TypeOf((*Qualifier)(nil)).Elem()) {
 		if canBe.(Qualifier).Qualify() == qualFigConf {
-			return true, nil
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 func getFullName(canBe interface{}) string {
@@ -261,26 +274,6 @@ func getFullName(canBe interface{}) string {
 		implName = pckPath + "/" + implName
 	}
 	return implName
-}
-
-func (fig *Fig) injectIfFigTag(tag reflect.StructTag) bool {
-	if fig.injectOnlyIfFigTagProvided {
-		if _, found := tag.Lookup(FIG_TAG); !found {
-			return false
-		}
-	}
-	return true
-}
-
-func (fig *Fig) needToSkip(tag reflect.StructTag) (bool, error) {
-	if skipConfValue, found := getFigTagConfig(tag, SKIP_TAG_KEY); found {
-		if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
-			return false, err
-		} else if needSkip {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 type InjectStep interface {
@@ -345,7 +338,9 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 
 	case
 		reflect.String:
-		if envKey, found := getFigTagConfig(valueSetup.tag, ENV_TAG_KEY); found {
+		if envKey, found, err := getFigTagConfig(valueSetup.tag, ENV_TAG_KEY); err != nil {
+			return err
+		} else if found {
 			envVal := os.Getenv(envKey)
 			valueSetup.holderElementField.Addr().Elem().Set(reflect.ValueOf(envVal))
 		}
@@ -383,7 +378,9 @@ func NewRegisteredValueSetup(fig *Fig, tag reflect.StructTag, holderElementField
 }
 
 func (registeredValue *InjectStepRegisteredValueSetup) Do() error {
-	if regKey, found := getFigTagConfig(registeredValue.tag, REG_TAG_KEY); found {
+	if regKey, found, err := getFigTagConfig(registeredValue.tag, REG_TAG_KEY); err != nil {
+		return err
+	} else if found {
 		if regValue, found := registeredValue.fig.registeredValues[regKey]; found {
 			registeredValue.holderElementField.Addr().Elem().Set(reflect.ValueOf(regValue))
 			registeredValue.skip = true
@@ -435,17 +432,17 @@ func NewSkipCheck(tag reflect.StructTag) *InjectStepSkipCheck {
 }
 
 func (skipVerify *InjectStepSkipCheck) Do() error {
-	if skipConfValue, found := getFigTagConfig(skipVerify.tag, SKIP_TAG_KEY); found {
+	if skipConfValue, found, err := getFigTagConfig(skipVerify.tag, SKIP_TAG_KEY); err != nil {
+		return err
+	} else if found {
 		if skipConfValue == "true" {
 			skipVerify.skip = true
 		} else if skipConfValue != "false" {
-			return FigError{Cause: "Incorrectly defined `fig` tag config", Error_: ErrorCannotBeHolder}
+			return FigError{
+				Cause:  "Incorrectly defined configuration `skip` of `fig` tag. Supported values: true | false. Got: " + skipConfValue,
+				Error_: ErrorIncorrectTagConfiguration,
+			}
 		}
-		//if needSkip, err := strconv.ParseBool(skipConfValue); err != nil {
-		//	return err
-		//} else if needSkip {
-		//	skipVerify.skip = true
-		//}
 	}
 	return nil
 }
