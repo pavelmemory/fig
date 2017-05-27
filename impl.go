@@ -328,10 +328,12 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 		}
 
 	case reflect.Ptr:
+		// we create references and setup them to fields
 		for valueSetup.holderElementField.Kind() == reflect.Ptr {
 			valueSetup.holderElementField.Set(reflect.New(valueSetup.holderElementField.Type().Elem()))
 			valueSetup.holderElementField = valueSetup.holderElementField.Elem()
 		}
+		// and after that we need to create an object of struct itself and initialize those last reference with it
 		if err := valueSetup.Do(); err != nil {
 			return err
 		}
