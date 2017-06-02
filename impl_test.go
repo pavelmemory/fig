@@ -390,6 +390,14 @@ func TestInitialize_RecursiveInjectionToReferenceFields(t *testing.T) {
 		return injector.Initialize(holder)
 	})
 
+	if holder.FirstLevel == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+
+	if holder.FirstLevel.SecondLevel == nil {
+		t.Error("Nested structs were not populated properly")
+	}
+
 	if holder.FirstLevel.SecondLevel.UserRepo == nil {
 		t.Error("Nested structs were not populated properly")
 	}
@@ -767,7 +775,7 @@ func TestInitialize_OnlyPointersToStructsAllowed(t *testing.T) {
 }
 
 type StubUserRepo struct {
-	repos.OrderRepo
+	OrderRepo repos.OrderRepo
 }
 
 var _ repos.UserRepo = new(StubUserRepo)
@@ -777,8 +785,9 @@ func (*StubUserRepo) Save(name string) {}
 
 func TestInitialize_ErrorIfInitializationToRegisteredValueFailed(t *testing.T) {
 	injector := New(false)
+	sur := new(StubUserRepo)
 	FatalIfError(func() error {
-		return injector.Register(new(StubUserRepo))
+		return injector.Register(sur)
 	})
 
 	holder := &struct {
@@ -797,28 +806,33 @@ func TestInitialize_ErrorIfInitializationToRegisteredValueFailed(t *testing.T) {
 	}
 }
 
-type AggregationUserRepo struct {
-	UserRepo *repos.FileUserRepo
-}
+type A struct{ Pb *B}
+type B struct { Pa *A}
 
-func TestInitialize_CircleImplementation(t *testing.T) {
+func TestInitialize_CyclicStructReferences(t *testing.T) {
 	injector := New(false)
+	a := new(A)
+	b := new(B)
 	FatalIfError(func() error {
-		return injector.Register(new(AggregationUserRepo))
+		return injector.Register(a, b)
 	})
 
 	holder := &struct {
-		repos.UserRepo
+		PA *A
 	}{}
-	err := injector.Initialize(holder)
-	if err == nil {
-		t.Fatalf("We expect error for: %#v", holder)
+	FatalIfError(func() error {
+		return injector.Initialize(holder)
+	})
+
+	if holder.PA != a {
+		t.Error("Incorrect injection")
 	}
-	if figError, ok := err.(FigError); ok {
-		if figError.Error_ != ErrorCannotDecideImplementation {
-			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
-		}
-	} else {
-		t.Fatal(fmt.Sprintf("Unexpected type of error: %#v", err))
+
+	if holder.PA.Pb != b {
+		t.Error("Incorrect injection")
+	}
+
+	if holder.PA.Pb.Pa != a {
+		t.Error("Incorrect injection")
 	}
 }

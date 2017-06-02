@@ -6,7 +6,6 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"sync"
 )
 
 type Qualifier interface {
@@ -31,10 +30,6 @@ func getConfigValueForKey(conf string, key string) (string, bool, error) {
 		return "", false, nil
 	}
 
-	//if keyStart > 0 && !(conf[keyStart-1] == ' ' || conf[keyStart-1] == ']') {
-	//	return "", false
-	//}
-
 	valStart := keyStart + len(confHolder)
 	valEnd := strings.Index(conf[valStart:], "]")
 	if valEnd <= 0 {
@@ -52,8 +47,6 @@ type Fig struct {
 	assembled                  map[reflect.Type]bool
 
 	registeredValues map[string]interface{}
-
-	assembleRegisteredOnce *sync.Once
 }
 
 func New(injectOnlyIfFigTagProvided bool) *Fig {
@@ -62,7 +55,6 @@ func New(injectOnlyIfFigTagProvided bool) *Fig {
 		registered:                 make(map[reflect.Type]interface{}),
 		assembled:                  make(map[reflect.Type]bool),
 		registeredValues:           make(map[string]interface{}),
-		assembleRegisteredOnce:     new(sync.Once),
 	}
 }
 
@@ -126,50 +118,43 @@ func (fig *Fig) RegisterValues(keyValues map[string]interface{}) error {
 }
 
 func (fig *Fig) Initialize(holder interface{}) error {
+	assemblingChain := make([]string, 0)
+	err := fig.initialize(holder, &assemblingChain)
+	if err != nil {
+		if len(assemblingChain) > 0 {
+			err := err.(FigError)
+			err.Cause = strings.Join(assemblingChain, " -> ") + "=> " + err.Cause
+		}
+		return err
+	}
+	return nil
+}
+
+func (fig *Fig) initialize(holder interface{}, assemblingChain *[]string) error {
 	holderType := reflect.TypeOf(holder)
 	if holderType == nil {
 		return FigError{Cause: "nil cannot be holder", Error_: ErrorCannotBeHolder}
 	}
 	if holderType.Kind() != reflect.Ptr ||
 		holderType.Elem().Kind() != reflect.Struct {
-		return FigError{Cause: "only references to structs can be holders", Error_: ErrorCannotBeHolder}
+		return FigError{Cause: fmt.Sprintf("only references to structs can be holders: %v", holderType), Error_: ErrorCannotBeHolder}
 	}
-	if err := fig.AssembleRegistered(); err != nil {
+	if err := fig.AssembleRegistered(assemblingChain); err != nil {
 		return err
 	}
-	return fig.assemble(holder, false)
+	return fig.assemble(holder, assemblingChain, false)
 }
 
-func isCircleInclusion(this reflect.Type, that reflect.Type) bool {
-	for this.Kind() == reflect.Ptr {
-		this = this.Elem()
-	}
-	if this.Kind() == reflect.Struct {
-		numFields := this.NumField()
-		for i := 0; i < numFields; i++ {
-			thisFieldType := this.Field(i).Type
-			if that.AssignableTo(thisFieldType) {
-				return true
-			}
-			if isCircleInclusion(thisFieldType, that) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (fig *Fig) AssembleRegistered() error {
-	var err error
-	fig.assembleRegisteredOnce.Do(func() {
-		for regType, regObject := range fig.registered {
-			if err = fig.assemble(regObject, true); err != nil {
-				break
-			}
+func (fig *Fig) AssembleRegistered(assemblingChain *[]string) error {
+	for regType, regObject := range fig.registered {
+		if !fig.assembled[regType] {
 			fig.assembled[regType] = true
+			if err := fig.assemble(regObject, assemblingChain, true); err != nil {
+				return err
+			}
 		}
-	})
-	return err
+	}
+	return nil
 }
 
 func getFigTagConfig(tag reflect.StructTag, key string) (string, bool, error) {
@@ -207,7 +192,7 @@ func setByQualConf(canBeSet []interface{}, elementField reflect.Value, qualFigCo
 	}
 }
 
-func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value, tag reflect.StructTag) error {
+func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value, tag reflect.StructTag, assemblingChain *[]string) error {
 	switch {
 	case len(canBeSet) > 1:
 		if implFigConf, found, err := getFigTagConfig(tag, IMPL_TAG_KEY); err != nil {
@@ -225,22 +210,41 @@ func (fig *Fig) setFoundImpl(canBeSet []interface{}, elementField reflect.Value,
 			}
 			return FigError{Cause: mes, Error_: ErrorCannotDecideImplementation}
 		}
+
 	case len(canBeSet) < 1:
 		switch elementField.Kind() {
-		case reflect.Struct:
-			if err := fig.Initialize(elementField.Addr().Interface()); err != nil {
-				return err
+		case reflect.Ptr, reflect.Struct:
+			if elementField.Kind() == reflect.Ptr {
+				for elementField.Kind() == reflect.Ptr {
+					elementField.Set(reflect.New(elementField.Type().Elem()))
+					elementField = elementField.Elem()
+				}
+				elementField.Set(reflect.New(elementField.Type()).Elem())
 			}
-		case reflect.Ptr:
-			if elementField.IsNil() {
-				elementField.Set(reflect.New(elementField.Type().Elem()))
-			}
-			if err := fig.Initialize(elementField.Interface()); err != nil {
+			if err := fig.initialize(elementField.Addr().Interface(), assemblingChain); err != nil {
 				return err
 			}
 		default:
 			return FigError{Cause: "no implementation found for " + elementField.String(), Error_: ErrorCannotDecideImplementation}
 		}
+		//switch elementField.Kind() {
+		//case reflect.Struct:
+		//	if err := fig.Initialize(elementField.Addr().Interface()); err != nil {
+		//		return err
+		//	}
+		//case reflect.Ptr:
+		//	if elementField.IsNil() {
+		//		elementField.Set(reflect.New(elementField.Type().Elem()))
+		//	}
+		//	if err := fig.setFoundImpl(canBeSet, elementField, tag); err != nil {
+		//		return err
+		//	}
+		//	//if err := fig.Initialize(elementField.Interface()); err != nil {
+		//	//	return err
+		//	//}
+		//default:
+		//	return FigError{Cause: "no implementation found for " + elementField.String(), Error_: ErrorCannotDecideImplementation}
+		//}
 	default:
 		elementField.Addr().Elem().Set(reflect.ValueOf(canBeSet[0]))
 	}
@@ -286,10 +290,21 @@ type InjectStepValueSetup struct {
 	holderElementField reflect.Value
 	tag                reflect.StructTag
 	recursive          bool
+	assemblingChain    *[]string
 }
 
-func NewValueSetup(fig *Fig, tag reflect.StructTag, holderElementField reflect.Value, recursive bool) *InjectStepValueSetup {
-	return &InjectStepValueSetup{fig: fig, holderElementField: holderElementField, recursive: recursive, tag: tag}
+func NewValueSetup(fig *Fig,
+	tag reflect.StructTag,
+	holderElementField reflect.Value,
+	recursive bool,
+	assemblingChain *[]string) *InjectStepValueSetup {
+	return &InjectStepValueSetup{
+		fig:                fig,
+		holderElementField: holderElementField,
+		recursive:          recursive,
+		tag:                tag,
+		assemblingChain:    assemblingChain,
+	}
 }
 
 func (valueSetup *InjectStepValueSetup) Do() error {
@@ -297,44 +312,32 @@ func (valueSetup *InjectStepValueSetup) Do() error {
 	case reflect.Interface:
 		var canBeSet []interface{}
 		for registeredType, injectableObj := range valueSetup.fig.registered {
-			if registeredType.Implements(valueSetup.holderElementField.Type()) &&
-				!isCircleInclusion(registeredType, valueSetup.holderElementField.Type()) {
+			if registeredType.Implements(valueSetup.holderElementField.Type()) {
 				if valueSetup.recursive && !valueSetup.fig.assembled[registeredType] {
-					if err := valueSetup.fig.assemble(injectableObj, valueSetup.recursive); err != nil {
+					if err := valueSetup.fig.assemble(injectableObj, valueSetup.assemblingChain, valueSetup.recursive); err != nil {
 						return err
 					}
 				}
 				canBeSet = append(canBeSet, injectableObj)
 			}
 		}
-		if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag); err != nil {
+		if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag, valueSetup.assemblingChain); err != nil {
 			return err
 		}
 
-	case reflect.Struct:
+	case reflect.Ptr, reflect.Struct:
 		var canBeSet []interface{}
 		for registeredType, injectableObj := range valueSetup.fig.registered {
 			if registeredType.AssignableTo(valueSetup.holderElementField.Type()) {
-				if valueSetup.recursive && !valueSetup.fig.assembled[registeredType] {
-					if err := valueSetup.fig.assemble(injectableObj, valueSetup.recursive); err != nil {
+				if valueSetup.recursive && !valueSetup.fig.assembled[registeredType]  {
+					if err := valueSetup.fig.assemble(injectableObj, valueSetup.assemblingChain, valueSetup.recursive); err != nil {
 						return err
 					}
 				}
 				canBeSet = append(canBeSet, injectableObj)
 			}
 		}
-		if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag); err != nil {
-			return err
-		}
-
-	case reflect.Ptr:
-		// we create references and setup them to fields
-		for valueSetup.holderElementField.Kind() == reflect.Ptr {
-			valueSetup.holderElementField.Set(reflect.New(valueSetup.holderElementField.Type().Elem()))
-			valueSetup.holderElementField = valueSetup.holderElementField.Elem()
-		}
-		// and after that we need to create an object of struct itself and initialize those last reference with it
-		if err := valueSetup.Do(); err != nil {
+		if err := valueSetup.fig.setFoundImpl(canBeSet, valueSetup.holderElementField, valueSetup.tag, valueSetup.assemblingChain); err != nil {
 			return err
 		}
 
@@ -461,8 +464,9 @@ func NewStepMachine() *StepMachine {
 	return &StepMachine{}
 }
 
-func (sm *StepMachine) Add(steps ...InjectStep) {
+func (sm *StepMachine) Add(steps ...InjectStep) *StepMachine {
 	sm.steps = append(sm.steps, steps...)
+	return sm
 }
 
 func (sm *StepMachine) Do() error {
@@ -477,28 +481,35 @@ func (sm *StepMachine) Do() error {
 	return nil
 }
 
-func (fig *Fig) assemble(holder interface{}, recursive bool) error {
+func (fig *Fig) assemble(holder interface{}, assemblingChain *[]string, recursive bool) error {
 	holderElement := reflect.ValueOf(holder)
 	if holderElement.Kind() == reflect.Ptr {
 		holderElement = holderElement.Elem()
 	}
 	holderElementType := holderElement.Type()
+	*assemblingChain = append(*assemblingChain, holderElementType.String())
 	numFields := holderElement.NumField()
 
 	for fieldIndex := 0; fieldIndex < numFields; fieldIndex++ {
 		holderElementField := holderElement.Field(fieldIndex)
-		tag := holderElementType.Field(fieldIndex).Tag
+		field := holderElementType.Field(fieldIndex)
+		//if field.Anonymous {
+		//	fmt.Println("Anonymous:", field.Type.PkgPath(), field.Type.Name())
+		//}
+		tag := field.Tag
 
-		stepMachine := NewStepMachine()
-		stepMachine.Add(
+		holderElementFieldType := holderElementField.Type()
+		*assemblingChain = append(*assemblingChain, holderElementFieldType.String())
+		if err := NewStepMachine().Add(
 			NewFigTagRequiredCheck(fig, tag),
 			NewSkipCheck(tag),
 			NewRegisteredValueSetup(fig, tag, holderElementField),
-			NewValueSetup(fig, tag, holderElementField, recursive),
-		)
-		if err := stepMachine.Do(); err != nil {
+			NewValueSetup(fig, tag, holderElementField, recursive, assemblingChain),
+		).Do(); err != nil {
 			return err
 		}
+		*assemblingChain = (*assemblingChain)[:len(*assemblingChain)-1]
 	}
+	*assemblingChain = (*assemblingChain)[:len(*assemblingChain)-1]
 	return nil
 }
