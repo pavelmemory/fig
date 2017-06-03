@@ -15,17 +15,24 @@ func FatalIfError(command func() error) {
 	}
 }
 
+func ExpectError(err error, t *testing.T, holder interface{}, expected error) {
+	if err == nil {
+		t.Fatalf("We expect error for: %#v", holder)
+	}
+	t.Log(err)
+	if figError, ok := err.(FigError); ok {
+		if figError.Error_ != expected {
+			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
+		}
+	} else {
+		t.Fatal(fmt.Sprintf("Unexpected type of error: %#v", err))
+	}
+}
+
 func TestFig_InitializeNil(t *testing.T) {
 	injector := New(false)
 	err := injector.Initialize(nil)
-	if err == nil {
-		t.Fatal("The error is mandatry in such a case")
-	}
-
-	figErr := err.(FigError)
-	if figErr.Error_ != ErrorCannotBeHolder {
-		t.Error("invalid error reason")
-	}
+	ExpectError(err, t, nil, ErrorCannotBeHolder)
 }
 
 func Example_InitializeStructWithInterfaces() {
@@ -131,14 +138,7 @@ func TestInitialize_InterfaceWithMultipleImplementationsWithSameStructNameWithou
 		repos.UserRepo
 	}{}
 	err := injector.Initialize(holder)
-	if err == nil {
-		t.Error("Multiple implementations registered require implicit definition of one to choose")
-	}
-	figErr := err.(FigError)
-	if figErr.Error_ != ErrorCannotDecideImplementation {
-		t.Log(err)
-		t.Error("unexpected error")
-	}
+	ExpectError(err, t, holder, ErrorCannotDecideImplementation)
 }
 
 func Example_InitializeInterfaceWithMultipleImplementationsWithSameStructNameWithExplicitDefinition() {
@@ -296,13 +296,7 @@ func TestInitialize_RegisterValueNotFound(t *testing.T) {
 	}{}
 
 	err := injector.Initialize(holder)
-	if err == nil {
-		t.Fatal("Should singal error")
-	}
-	figErr := err.(FigError)
-	if figErr.Error_ != ErrorCannotDecideImplementation {
-		t.Error("Should be that type of error")
-	}
+	ExpectError(err, t, nil, ErrorCannotDecideImplementation)
 }
 
 func Example_InitializeOnlyWithFigTag() {
@@ -427,6 +421,14 @@ func TestInitialize_NoRecursiveInjectionToReferenceFieldsWithoutExplicitFigTag(t
 	}
 }
 
+func TestInitialize_ErrorInRecursiveInjection(t *testing.T) {
+	injector := New(false)
+	holder := new(holderWithReferenceFields)
+
+	err := injector.Initialize(holder)
+	ExpectError(err, t, holder, ErrorCannotDecideImplementation)
+}
+
 type firstLevelReferenceStructWithoutDependencies struct {
 	SecondLevel *secondLevelReferenceStructWithoutDependencies
 }
@@ -541,15 +543,7 @@ func TestInitialize_QualifyNotDefinedButTagProvided(t *testing.T) {
 	}{}
 
 	err := injector.Initialize(holder)
-	if err == nil {
-		t.Fatal("there must be error because nothing in two registered equals to 'qual' value")
-	}
-
-	figErr := err.(FigError)
-	if figErr.Error_ != ErrorCannotDecideImplementation {
-		t.Log(err)
-		t.Error("unexpected error")
-	}
+	ExpectError(err, t, nil, ErrorCannotDecideImplementation)
 }
 
 func TestInitialize_IncorrectFigTagConfigSKIP(t *testing.T) {
@@ -662,22 +656,13 @@ func TestInitialize_IncorrectFigTagConfigIMPL(t *testing.T) {
 func validateFigTagConfigIncorrect(incorrectDefinitionsOfFigTag []interface{}, injector *Fig, t *testing.T, expErr error) {
 	for _, incorrectDefinitionOfFigTag := range incorrectDefinitionsOfFigTag {
 		err := injector.Initialize(incorrectDefinitionOfFigTag)
-		if err == nil {
-			t.Fatalf("Initialization error expected for type: %#v", incorrectDefinitionOfFigTag)
-		}
-		if figError, ok := err.(FigError); ok {
-			if figError.Error_ != expErr {
-				t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
-			}
-		} else {
-			t.Error(fmt.Sprintf("Unexpected type of error: %#v", err))
-		}
+		ExpectError(err, t, nil, expErr)
 	}
 }
 
 func TestRegister_Errors(t *testing.T) {
 	injector := New(false)
-	for _, cannotBeRegistered := range []interface{} {
+	for _, cannotBeRegistered := range []interface{}{
 		100,
 		make(map[string]struct{}),
 		nil,
@@ -768,9 +753,7 @@ func TestInitialize_OnlyPointersToStructsAllowed(t *testing.T) {
 		struct{ f string }{},
 	} {
 		err := injector.Initialize(holder)
-		if err == nil {
-			t.Errorf("We expect error for: %#v", holder)
-		}
+		ExpectError(err, t, nil, ErrorCannotBeHolder)
 	}
 }
 
@@ -794,20 +777,11 @@ func TestInitialize_ErrorIfInitializationToRegisteredValueFailed(t *testing.T) {
 		repos.UserRepo
 	}{}
 	err := injector.Initialize(holder)
-	if err == nil {
-		t.Fatalf("We expect error for: %#v", holder)
-	}
-	if figError, ok := err.(FigError); ok {
-		if figError.Error_ != ErrorCannotDecideImplementation {
-			t.Error(fmt.Sprintf("Unexpected generic cause of error: %#v", figError))
-		}
-	} else {
-		t.Fatal(fmt.Sprintf("Unexpected type of error: %#v", err))
-	}
+	ExpectError(err, t, nil, ErrorCannotDecideImplementation)
 }
 
-type A struct{ Pb *B}
-type B struct { Pa *A}
+type A struct{ Pb *B }
+type B struct{ Pa *A }
 
 func TestInitialize_CyclicStructReferences(t *testing.T) {
 	injector := New(false)
@@ -835,4 +809,146 @@ func TestInitialize_CyclicStructReferences(t *testing.T) {
 	if holder.PA.Pb.Pa != a {
 		t.Error("Incorrect injection")
 	}
+}
+
+func TestInitialize_MapField(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		IntToInt     map[int]int
+		StringToBool map[string]bool
+		AToB         map[A]B
+	}{}
+
+	FatalIfError(func() error {
+		return injector.Initialize(holder)
+	})
+	if holder.IntToInt == nil {
+		t.Error("map[int]int not initialized")
+	}
+	if holder.StringToBool == nil {
+		t.Error("map[string]bool not initialized")
+	}
+	if holder.AToB == nil {
+		t.Error("map[A]B not initialized")
+	}
+}
+
+func TestInitialize_ChanField(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		InboundQueue  <-chan repos.UserRepo
+		OutboundQueue chan<- repos.UserRepo `fig:"size[2]"`
+		Limiter       chan struct{}
+		Lock          chan struct{} `fig:"size[0]"`
+	}{}
+
+	FatalIfError(func() error {
+		return injector.Initialize(holder)
+	})
+	if holder.InboundQueue == nil {
+		t.Error("<-chan repos.UserRepo not initialized")
+	}
+	if holder.OutboundQueue == nil {
+		t.Error("chan<- repos.UserRepo not initialized")
+	}
+	if cap(holder.OutboundQueue) != 2 {
+		t.Error("chan<- repos.UserRepo size is not 2 as specified in configuration")
+	}
+	if holder.Limiter == nil {
+		t.Error("chan struct{} not initialized")
+	}
+	if cap(holder.Limiter) != 1 {
+		t.Error("chan struct{} size is not default size of 1")
+	}
+	if holder.Lock == nil {
+		t.Error("chan struct{} not initialized")
+	}
+	if cap(holder.Lock) != 0 {
+		t.Error("chan struct{} size is not 0")
+	}
+}
+
+func TestInitialize_ChanFieldBadSizeConfiguration(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		Limiter chan struct{} `fig:"size[abc]"`
+	}{}
+
+	err := injector.Initialize(holder)
+	ExpectError(err, t, holder, ErrorIncorrectTagConfiguration)
+}
+
+func TestInitialize_Slice(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		SizeDefault       []string
+		Size10            []int `fig:"size[10]"`
+		Capacity10        []int `fig:"cap[10]"`
+		Size10Capacity100 []int `fig:"size[10] cap[100]"`
+	}{}
+
+	FatalIfError(func() error {
+		return injector.Initialize(holder)
+	})
+
+	if len(holder.SizeDefault) != 0 {
+		t.Error("Expected default size of 0")
+	}
+	if cap(holder.SizeDefault) != 0 {
+		t.Error("Expected default capacity same to size")
+	}
+	if len(holder.Size10) != 10 {
+		t.Error("Expected provided size of 10")
+	}
+	if cap(holder.Capacity10) != 10 {
+		t.Error("Expected provided capacity of 10")
+	}
+	if len(holder.Size10Capacity100) != 10 {
+		t.Error("Expected provided size of 10")
+	}
+	if cap(holder.Size10Capacity100) != 100 {
+		t.Error("Expected capacity f 100")
+	}
+}
+
+func TestInitialize_SliceSizeBiggerCapacity(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		SizeDefaultCapacity10 []int `fig:"size[11] cap[10]"`
+	}{}
+
+	err := injector.Initialize(holder)
+	ExpectError(err, t, holder, ErrorIncorrectTagConfiguration)
+}
+
+func TestInitialize_SliceWrongConfiguration(t *testing.T) {
+	injector := New(false)
+
+	holders := []interface{}{
+		&struct {
+			WrongSize []int `fig:"size[!]"`
+		}{},
+		&struct {
+			WrongCapacity []float32 `fig:"cap[arf]"`
+		}{},
+	}
+	for _, holder := range holders {
+		err := injector.Initialize(holder)
+		ExpectError(err, t, holder, ErrorIncorrectTagConfiguration)
+	}
+}
+
+func TestInitialize_FunctionsNotSupported(t *testing.T) {
+	injector := New(false)
+
+	holder := &struct {
+		Func func()
+	}{}
+	err := injector.Initialize(holder)
+	ExpectError(err, t, holder, ErrorCannotBeHolder)
 }
