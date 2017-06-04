@@ -5,11 +5,11 @@ with dependencies with dependencies with depend...
 
 It is simple to use, lightweight and written in pure Go.
 
-Common scenario when to use it is next - lets assume you have a struct with fields of
+Common scenario when to use it is next. Lets assume you have a struct with fields of
 interface types and you want them to be initialized with right implementation
 depending if it is a prod, dev or test run. All you need to do is
 create Fig object and register to it all dependencies you would like to
-use. It is not necessary to initialize dependencies of dependencies it will be done
+use. It is not necessary to initialize dependencies of dependencies because it will be done
 automatically. All registered objects will be treated as potential candidates
 for injection. After that just call `Initialize` method with struct you want to
 be initialized (it also can be reference to anonymous struct).
@@ -93,24 +93,24 @@ order created
 There are two modes how `Fig` works. In case you create `Fig` object
 with `false` constructor value will mean you want all fields
 of initialization structs to be injected. If you specify `true`
- than only fields with `fig` tag will be injected (it can be just empty
+ then only fields with `fig` tag will be injected (it can be just empty
  tag like `fig:""`).
 
 **Example**
 'fig' injector with 'false'
-https://github.com/pavelmemory/fig/blob/master/examples/simple/simple_2_test.go
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_2_test.go
 **Example**
 'fig' injector with 'true'
-https://github.com/pavelmemory/fig/blob/master/examples/simple/simple_3_test.go
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_3_test.go
 
 
 ****
 **Multiple implementations of interface**
 
-In case you have multiple implementations registered to be injected 
-and need define some policy what you want in each injectable field.
-There is a couple of configuration tags that can help with it.
-To use those configurations you need to define tag 'fig' for field.
+In case you have registered multiple implementations of one interface 
+you need to define a policy that will help to find which implementation to inject.
+There are couple of configuration tags designed to help with it.
+You need to configure fields with tag `fig` and policies from list below
 This tag can have next configurations:
 - `skip` - expected value [`true`|`false`].
 This field will be skipped at time of injection
@@ -118,7 +118,7 @@ if provided value is `true` and the field
 has value it had before invocation of `Initialize`
 method (can be used with other configurations)
 - `impl` - expected value is a full name of type with
-package name `github.com/proj/implement/SomeStructName`.
+package name `github.com/proj/implement/SomeStructName`
 It will be used in case you have registered multiple
 implementations of one interface. So object with provided
 name will be injected
@@ -132,24 +132,22 @@ registered implementations. If no one of candidates implements
 it will lead to an error
 
 ***Example***
-https://github.com/pavelmemory/fig/blob/master/examples/simple/simple_2_test.go
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_2_test.go
 
 ****
 **Any value by key**
 
-In case you want to inject not only implementation of interface, but
-any kind of value you can use `reg` configuration of `fig` tag.
+You can use `reg` configuration of `fig` tag to inject anything you want.
 You should register all values you want to use with
-`RegisterValue(key string, value interface{}) error` method.
-So value in tag `fig:"reg[key1]"`, in our case it is `key1`, should
-be registered with value that is assignable to type of field where
-this value is expected.
-- `reg` - expected value is any string. This key should be
-registered with `RegisterValue` method.
+`RegisterValue(key string, value interface{}) error` or 
+`RegisterValues(keyValues map[string]interface{}) error` methods.
+For configuration `fig:"reg[key1]"` value associated with key `key1` 
+will be injected to the field.
+- `reg` - expected value is any string. Must be
+registered with `RegisterValue` or `RegisterValues` methods
 
 ***Example***
-
-
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_5_test.go
 
 ***
 **Environment variables injection**
@@ -160,7 +158,21 @@ the problem of manual initialization of such values.
 - `env` - expected value is any string that can represent key of
 environment variable. Value of this environment variable will be assigned to field.
 There is no way to provide default value, so in such case it is better to use `reg`
-configuration.
+configuration
 
 ***Example***
-https://github.com/pavelmemory/fig/blob/master/examples/simple/simple_1_test.go
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_1_test.go
+
+***
+**Initialization of maps, slices and channels**
+
+Maps, slices and channels can be initialized as well.
+<br/>For maps just new map struct will be created and injected.
+<br/>For channels it is possible to define size of buffer. Default value is 1.
+<br/>And for slices you can define length and capacity. Default length and capacity are 1.
+- `size` - expected value is integer. Used to specify size of channel or 
+length of slice.
+- `cap` - expected value is integer. Used to specify capacity of slice. Can't be less than `size` for slices.
+
+***Example***
+https://github.com/pavelmemory/fig/blob/master/examples/sample/sample_5_test.go

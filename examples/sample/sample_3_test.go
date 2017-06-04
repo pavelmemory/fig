@@ -1,11 +1,11 @@
-package simple
+package sample
 
 import (
 	"fmt"
 
 	"github.com/pavelmemory/fig"
-	"github.com/pavelmemory/fig/examples/src/otherrepos"
-	"github.com/pavelmemory/fig/examples/src/repos"
+	"github.com/pavelmemory/fig/examples/justpackage/otherrepos"
+	"github.com/pavelmemory/fig/examples/justpackage/repos"
 )
 
 /*

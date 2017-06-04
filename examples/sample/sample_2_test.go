@@ -1,12 +1,12 @@
-package simple
+package sample
 
 import (
 	"log"
 	"os"
 
 	"github.com/pavelmemory/fig"
-	"github.com/pavelmemory/fig/examples/src/otherrepos"
-	"github.com/pavelmemory/fig/examples/src/repos"
+	"github.com/pavelmemory/fig/examples/justpackage/otherrepos"
+	"github.com/pavelmemory/fig/examples/justpackage/repos"
 )
 
 func FatalIfError(command func() error) {
@@ -47,7 +47,7 @@ func ExampleSimpleInjection() {
 
 	controller := struct {
 		// explicit definition of type to be injected because multiple interface imps is registered
-		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/repos/MemUserRepo]"`
+		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/justpackage/repos/MemUserRepo]"`
 		// Injection of embedded interfaces is also supported
 		repos.OrderRepo
 		// Struct

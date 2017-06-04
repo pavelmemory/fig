@@ -5,8 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/pavelmemory/fig/examples/src/otherrepos"
-	"github.com/pavelmemory/fig/examples/src/repos"
+	"github.com/pavelmemory/fig/examples/justpackage/otherrepos"
+	"github.com/pavelmemory/fig/examples/justpackage/repos"
 )
 
 func FatalIfError(command func() error) {
@@ -76,7 +76,7 @@ func Example_InitializeStructWithMultipleInterfaceImplementations() {
 	})
 
 	holder := &struct {
-		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/repos/FileUserRepo]"`
+		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/justpackage/repos/FileUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
@@ -151,7 +151,7 @@ func Example_InitializeInterfaceWithMultipleImplementationsWithSameStructNameWit
 	})
 
 	holder := &struct {
-		repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/otherrepos/MemUserRepo]"`
+		repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/justpackage/otherrepos/MemUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
@@ -211,7 +211,7 @@ func Example_InitializeExplicitImplementationSpecificationSkippedIfSingleImpleme
 	})
 
 	holder := &struct {
-		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/src/repos/MemUserRepo]"`
+		UserRepo repos.UserRepo `fig:"impl[github.com/pavelmemory/fig/examples/justpackage/repos/MemUserRepo]"`
 	}{}
 
 	FatalIfError(func() error {
