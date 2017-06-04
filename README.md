@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/pavelmemory/fig.svg?branch=master)](https://travis-ci.org/pavelmemory/fig)
+
 ## Fig
 **Fig** is a dependency injection tool written in Go for Go.
 It was developed to help solve problem with initialization of structures
