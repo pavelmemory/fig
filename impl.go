@@ -60,6 +60,7 @@ func (fe FigError) Error() string {
 }
 
 func (fig *Fig) Register(impls ...interface{}) error {
+	// Crowdbotics
 	for _, impl := range impls {
 		implType := reflect.TypeOf(impl)
 		if implType == nil {
